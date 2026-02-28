@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from opentelemetry.trace import SpanKind
 
 from opentelemetry.instrumentation.claude_agent_sdk._constants import (
     GEN_AI_AGENT_NAME,
@@ -16,7 +17,6 @@ from opentelemetry.instrumentation.claude_agent_sdk._constants import (
     OPERATION_INVOKE_AGENT,
     SYSTEM_ANTHROPIC,
 )
-from opentelemetry.trace import SpanKind
 from tests.integration.conftest import get_invoke_agent_spans, make_cheap_options, requires_auth
 
 pytestmark = [pytest.mark.integration, requires_auth]

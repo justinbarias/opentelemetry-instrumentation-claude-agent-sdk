@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import asyncio
 
+from opentelemetry.trace import StatusCode
+
 from opentelemetry.instrumentation.claude_agent_sdk._context import (
     InvocationContext,
     get_invocation_context,
     set_invocation_context,
 )
-from opentelemetry.trace import StatusCode
 
 
 class TestInvocationContextCreation:

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from opentelemetry.trace import SpanKind, StatusCode, Tracer
+
 from opentelemetry.instrumentation.claude_agent_sdk._constants import (
     ERROR_TYPE,
     FINISH_REASON_MAP,
@@ -21,7 +23,6 @@ from opentelemetry.instrumentation.claude_agent_sdk._constants import (
     OPERATION_INVOKE_AGENT,
     SYSTEM_ANTHROPIC,
 )
-from opentelemetry.trace import SpanKind, StatusCode, Tracer
 
 if TYPE_CHECKING:
     from opentelemetry.trace import Span

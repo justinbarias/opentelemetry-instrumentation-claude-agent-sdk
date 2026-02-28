@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import pytest
-
 from opentelemetry.sdk.metrics import MeterProvider as SDKMeterProvider
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 from opentelemetry.sdk.trace import TracerProvider as SDKTracerProvider

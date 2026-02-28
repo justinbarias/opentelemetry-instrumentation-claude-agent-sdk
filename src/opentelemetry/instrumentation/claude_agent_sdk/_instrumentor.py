@@ -6,6 +6,9 @@ import time
 from typing import TYPE_CHECKING, Any
 
 import wrapt
+from opentelemetry.instrumentation.instrumentor import BaseInstrumentor  # type: ignore[attr-defined]
+from opentelemetry.metrics import get_meter_provider
+from opentelemetry.trace import get_tracer_provider
 
 from opentelemetry.instrumentation.claude_agent_sdk._constants import (
     GEN_AI_OPERATION_NAME,
@@ -35,9 +38,6 @@ from opentelemetry.instrumentation.claude_agent_sdk._spans import (
     set_result_attributes,
 )
 from opentelemetry.instrumentation.claude_agent_sdk.version import __version__
-from opentelemetry.instrumentation.instrumentor import BaseInstrumentor  # type: ignore[attr-defined]
-from opentelemetry.metrics import get_meter_provider
-from opentelemetry.trace import get_tracer_provider
 
 if TYPE_CHECKING:
     from collections.abc import Collection

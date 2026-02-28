@@ -8,6 +8,12 @@ from types import ModuleType
 from typing import TYPE_CHECKING, Any
 
 import pytest
+from opentelemetry.sdk.metrics import MeterProvider as SDKMeterProvider
+from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+from opentelemetry.sdk.trace import TracerProvider as SDKTracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import SpanKind, StatusCode
 
 from opentelemetry.instrumentation.claude_agent_sdk._constants import (
     ERROR_TYPE,
@@ -22,12 +28,6 @@ from opentelemetry.instrumentation.claude_agent_sdk._constants import (
     SYSTEM_ANTHROPIC,
 )
 from opentelemetry.instrumentation.claude_agent_sdk._instrumentor import ClaudeAgentSdkInstrumentor
-from opentelemetry.sdk.metrics import MeterProvider as SDKMeterProvider
-from opentelemetry.sdk.metrics.export import InMemoryMetricReader
-from opentelemetry.sdk.trace import TracerProvider as SDKTracerProvider
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-from opentelemetry.trace import SpanKind, StatusCode
 from tests.unit.conftest import make_usage
 
 if TYPE_CHECKING:

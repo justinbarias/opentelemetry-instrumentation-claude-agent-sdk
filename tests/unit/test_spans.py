@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from opentelemetry.trace import SpanKind, StatusCode
+
 from opentelemetry.instrumentation.claude_agent_sdk._constants import (
     ERROR_TYPE,
     GEN_AI_AGENT_NAME,
@@ -24,7 +26,6 @@ from opentelemetry.instrumentation.claude_agent_sdk._spans import (
     set_response_model,
     set_result_attributes,
 )
-from opentelemetry.trace import SpanKind, StatusCode
 from tests.unit.conftest import MockClaudeAgentOptions, MockResultMessage, make_usage
 
 
