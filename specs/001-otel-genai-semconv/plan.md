@@ -58,8 +58,9 @@ src/opentelemetry/instrumentation/claude_agent_sdk/
 ├── version.py           # Dynamic version from package metadata (exists)
 ├── _instrumentor.py     # ClaudeAgentSdkInstrumentor class (BaseInstrumentor subclass)
 ├── _hooks.py            # Hook callback implementations (PreToolUse, PostToolUse, etc.)
+├── _constants.py        # GenAI semantic convention attribute keys, metric names, bucket boundaries
 ├── _context.py          # InvocationContext dataclass + ContextVar management
-├── _spans.py            # Span creation helpers, attribute constants, span naming
+├── _spans.py            # Span creation helpers, span naming
 └── _metrics.py          # Histogram instrument creation and recording helpers
 
 tests/
@@ -163,7 +164,8 @@ client = ClaudeSDKClient(options)    ◄── __init__ wrapper injects hooks
 | Module | Responsibility | FR Coverage |
 |--------|---------------|-------------|
 | `_instrumentor.py` | `BaseInstrumentor` lifecycle, monkey-patching, `get_instrumentation_hooks()`, query/client wrappers, content capture for agent spans, conversation.id | FR-001–FR-004, FR-020 (agent content), FR-023 |
-| `_spans.py` | Span creation, attribute setting, naming, constants | FR-005–FR-010, FR-015–FR-016 |
+| `_constants.py` | GenAI attribute keys, metric names, histogram bucket boundaries | — (shared infrastructure) |
+| `_spans.py` | Span creation, attribute setting, naming | FR-005–FR-010, FR-015–FR-016 |
 | `_hooks.py` | Hook callback functions, hook merger, HookMatcher creation, tool content capture | FR-011–FR-014, FR-020 (tool content), FR-021, FR-026 |
 | `_context.py` | `InvocationContext` dataclass, `ContextVar`, crash cleanup | FR-022, FR-024–FR-025 |
 | `_metrics.py` | Histogram creation, token/duration recording | FR-017–FR-019 |
