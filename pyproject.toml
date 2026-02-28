@@ -1,0 +1,145 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "opentelemetry-instrumentation-claude-agent-sdk"
+dynamic = ["version"]
+description = "OpenTelemetry instrumentation for the Anthropic Claude Agent SDK"
+readme = "README.md"
+license = "MIT"
+requires-python = ">= 3.10"
+authors = [
+    { name = "Justin Barias" },
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Monitoring",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "opentelemetry-api ~= 1.12",
+    "opentelemetry-instrumentation >= 0.50b0",
+    "opentelemetry-semantic-conventions >= 0.50b0",
+    "wrapt >= 1.0.0, < 2.0.0",
+]
+
+[project.optional-dependencies]
+instruments = [
+    "claude-agent-sdk >= 0.1.37",
+]
+dev = [
+    "pytest >= 7.0",
+    "pytest-cov >= 4.0",
+    "pytest-asyncio >= 0.21",
+    "pytest-mock >= 3.10",
+    "pytest-xdist >= 3.0",
+    "black >= 23.0",
+    "ruff >= 0.4.0",
+    "mypy >= 1.10",
+    "pre-commit >= 3.0",
+    "bandit[toml] >= 1.7",
+    "pip-audit >= 2.6",
+    "detect-secrets >= 1.4",
+    "opentelemetry-sdk >= 1.12",
+    "claude-agent-sdk >= 0.1.37",
+]
+
+[project.urls]
+Homepage = "https://github.com/justinbarias/opentelemetry-instrumentation-claude-agent-sdk"
+Repository = "https://github.com/justinbarias/opentelemetry-instrumentation-claude-agent-sdk"
+Issues = "https://github.com/justinbarias/opentelemetry-instrumentation-claude-agent-sdk/issues"
+
+[project.entry-points.opentelemetry_instrumentor]
+claude-agent-sdk = "opentelemetry.instrumentation.claude_agent_sdk:ClaudeAgentSdkInstrumentor"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.version.raw-options]
+local_scheme = "no-local-version"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/opentelemetry"]
+
+# --- Tool Configs ---
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "TCH",  # flake8-type-checking
+    "RUF",  # ruff-specific
+]
+ignore = [
+    "E501",  # line too long — handled by black
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["opentelemetry.instrumentation.claude_agent_sdk"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_unreachable = true
+show_error_codes = true
+enable_error_code = ["ignore-without-code"]
+namespace_packages = true
+explicit_package_bases = true
+mypy_path = "src"
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_untyped_calls = false
+
+[[tool.mypy.overrides]]
+module = ["claude_agent_sdk.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-v --tb=short"
+markers = [
+    "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
+]
+
+[tool.bandit]
+targets = ["src"]
+exclude_dirs = ["tests"]
+
+[tool.black]
+line-length = 120
+target-version = ["py310"]
+
+[tool.coverage.run]
+source = ["opentelemetry.instrumentation.claude_agent_sdk"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 80
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.",
+]
