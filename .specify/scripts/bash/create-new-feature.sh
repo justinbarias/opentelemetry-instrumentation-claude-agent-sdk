@@ -112,9 +112,11 @@ get_highest_from_branches() {
             # Clean branch name: remove leading markers and remote prefixes
             clean_branch=$(echo "$branch" | sed 's/^[* ]*//; s|^remotes/[^/]*/||')
 
-            # Extract feature number if branch matches pattern ###-*
-            if echo "$clean_branch" | grep -q '^[0-9]\{3\}-'; then
-                number=$(echo "$clean_branch" | grep -o '^[0-9]\{3\}' || echo "0")
+            # Extract feature number if branch matches pattern ###-* or feature/###-*
+            # Strip "feature/" prefix if present
+            local stripped_branch=$(echo "$clean_branch" | sed 's|^feature/||')
+            if echo "$stripped_branch" | grep -q '^[0-9]\{3\}-'; then
+                number=$(echo "$stripped_branch" | grep -o '^[0-9]\{3\}' || echo "0")
                 number=$((10#$number))
                 if [ "$number" -gt "$highest" ]; then
                     highest=$number

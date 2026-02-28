@@ -50,6 +50,7 @@ dev = [
     "detect-secrets >= 1.4",
     "opentelemetry-sdk >= 1.12",
     "claude-agent-sdk >= 0.1.37",
+    "python-dotenv >= 1.0",
 ]
 
 [project.urls]
@@ -113,6 +114,10 @@ disallow_untyped_calls = false
 
 [[tool.mypy.overrides]]
 module = ["claude_agent_sdk.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["wrapt"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
