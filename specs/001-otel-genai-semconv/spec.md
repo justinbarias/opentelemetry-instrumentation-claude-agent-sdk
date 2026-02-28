@@ -1,4 +1,4 @@
-# Feature Specification: OTel GenAI Semantic Conventions for Claude Backend
+# Feature Specification: OTel GenAI Semantic Conventions for Claude Agent SDK
 
 **Feature Branch**: `001-otel-genai-semconv`
 **Created**: 2026-02-28
@@ -113,7 +113,7 @@ A developer debugging prompt engineering issues opts into content capture and se
 ### Edge Cases
 
 - What happens when the Claude subprocess crashes mid-invocation? The `invoke_agent` span must still be finalized with `error.type` and ERROR status, even on retry.
-- How are retries represented? Each retry attempt should be a separate child span under the parent `invoke_agent` span, so operators can see how many attempts were needed.
+- How are retries represented? If the *application* retries a `query()` call, each call naturally produces its own `invoke_agent` span. SDK-internal retries are not observable via the hook system and are out of scope until the SDK exposes retry lifecycle hooks.
 - What happens when token usage is not reported (e.g., subprocess crash before `ResultMessage`)? Token attributes should be omitted (not set to 0), following OTel conventions for missing data.
 - What happens when observability is disabled or no `TracerProvider`/`MeterProvider` is configured? Zero overhead — the instrumentation package uses the OTel API's no-op fallback behavior.
 - What happens if a `PreToolUse` hook fires but no matching `PostToolUse` or `PostToolUseFailure` follows (e.g., subprocess crash)? The tool span must be ended with ERROR status when the parent `invoke_agent` span is finalized.
@@ -126,7 +126,7 @@ A developer debugging prompt engineering issues opts into content capture and se
 
 **Package Independence**
 
-- **FR-001**: The GenAI instrumentation MUST be shippable as an independent Python package. Its only required dependencies are the Claude Agent SDK and the OpenTelemetry API (`opentelemetry-api`). The package lives in its own repository with its own `pyproject.toml`.
+- **FR-001**: The GenAI instrumentation MUST be shippable as an independent Python package with its own repository and `pyproject.toml`. Its required runtime dependencies are `opentelemetry-api`, `opentelemetry-instrumentation`, `opentelemetry-semantic-conventions`, and `wrapt`. The `claude-agent-sdk` is an optional extra under `[instruments]`, following the standard OTel instrumentation library convention where the instrumented library is validated at `instrument()` time.
 - **FR-002**: The package MUST follow the standard OTel Instrumentor pattern: an `Instrumentor` class with `instrument()` / `uninstrument()` methods. `instrument()` monkey-patches `query()` and `ClaudeSDKClient.__init__()` to automatically merge instrumentation hooks into user-provided `ClaudeAgentOptions`. Instrumentation hooks MUST be appended after any user-provided hooks for the same event type, ensuring they observe final state and never interfere with user permission/security decisions. The package MUST also expose a `get_instrumentation_hooks()` escape hatch that returns the raw hooks dict for manual wiring. `instrument()` MUST accept configuration options for content capture, custom tracer/meter providers, and agent metadata.
 - **FR-003**: The package MUST use the OTel API's global `TracerProvider` and `MeterProvider` by default but MUST accept explicit provider instances for testing and multi-tenant scenarios.
 - **FR-004**: Consuming applications SHOULD use the instrumentation package as a dependency, passing their observability preferences at activation time. No GenAI semconv logic should live in the consuming application's codebase.
@@ -149,8 +149,8 @@ A developer debugging prompt engineering issues opts into content capture and se
 
 **Hook-Driven Subagent Tracing**
 
-- **FR-015**: The package MUST register `SubagentStart` and `SubagentStop` hooks to create child spans for subagent lifecycles, with `gen_ai.agent.id` set to the subagent's `agent_id`.
-- **FR-016**: The package MUST correlate `SubagentStart` and `SubagentStop` using `tool_use_id` to accurately measure subagent duration.
+- **FR-015**: The package MUST register `SubagentStart` and `SubagentStop` hooks to create child spans for subagent lifecycles, with `gen_ai.agent.id` set to the subagent's `agent_id`. The span MUST be named `invoke_agent {agent_type}` using the `agent_type` field from `SubagentStartHookInput`.
+- **FR-016**: The package MUST correlate `SubagentStart` and `SubagentStop` using `agent_id` to accurately measure subagent duration. Note: the `tool_use_id` callback parameter is `None` for subagent hooks — `agent_id` from the hook input is the correct correlation key.
 
 **Metrics Requirements**
 
@@ -169,7 +169,7 @@ A developer debugging prompt engineering issues opts into content capture and se
 - **FR-023**: The package MUST use `gen_ai.conversation.id` to correlate multi-turn session spans.
 - **FR-024**: The package MUST produce zero overhead (no spans, no metrics, no hook registrations) when no `TracerProvider` or `MeterProvider` is configured (OTel API no-op behavior).
 - **FR-025**: The package MUST end all open tool/subagent spans when the parent `invoke_agent` span completes, even if correlating `PostToolUse`/`SubagentStop` hooks were never received (crash cleanup).
-- **FR-026**: The package MUST register a `Stop` hook to capture agent execution stop events and record the stop reason on the `invoke_agent` span.
+- **FR-026**: The package MUST register a `Stop` hook to ensure the `invoke_agent` span is properly finalized when the agent stops.
 
 
 ### Key Entities
@@ -188,7 +188,7 @@ A developer debugging prompt engineering issues opts into content capture and se
 - **SC-002**: All Claude Agent SDK invocations produce spans that pass validation against the OTel GenAI agent span specification (correct span names, required attributes present, correct attribute types).
 - **SC-003**: When used within an application that has an active parent span, Claude backend traces appear correctly nested under the caller's parent spans in any OTel-compatible tracing backend, with no orphaned spans.
 - **SC-004**: Token usage metrics are queryable by `gen_ai.provider.name`, `gen_ai.request.model`, and `gen_ai.token.type` in any OTel-compatible metrics backend.
-- **SC-005**: Enabling instrumentation adds less than 5% latency overhead to Claude invocations compared to uninstrumented usage.
+- **SC-005**: Enabling instrumentation SHOULD add negligible overhead to Claude invocations. Span creation, attribute setting, and metric recording are expected to complete in sub-millisecond time, which is insignificant relative to Claude invocation durations (seconds to minutes).
 - **SC-006**: When no `TracerProvider`/`MeterProvider` is configured, the instrumentation produces zero trace/metric exports and allocates no OTel span or metric objects.
 - **SC-007**: Tool execution spans account for 100% of tool calls observed via hooks — no tool calls are missed.
 - **SC-008**: Content capture attributes appear only when explicitly opted in; default configuration produces no sensitive data in traces.
