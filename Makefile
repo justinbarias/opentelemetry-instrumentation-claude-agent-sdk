@@ -68,10 +68,10 @@ test: ## Run all tests
 	uv run pytest $(TEST_DIR)
 
 test-unit: ## Run unit tests only
-	uv run pytest $(TEST_DIR) -m "not integration"
+	uv run pytest $(TEST_DIR)/unit
 
 test-integration: ## Run integration tests only
-	uv run pytest $(TEST_DIR) -m integration || test $$? -eq 5
+	uv run pytest $(TEST_DIR)/integration -m integration || test $$? -eq 5
 
 test-coverage: ## Run tests with coverage report
 	uv run pytest $(TEST_DIR) --cov --cov-report=term-missing --cov-report=xml:coverage.xml --cov-fail-under=$(MIN_COVERAGE)
