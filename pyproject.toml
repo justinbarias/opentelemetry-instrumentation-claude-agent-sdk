@@ -3,7 +3,7 @@ requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
-name = "opentelemetry-instrumentation-claude-agent-sdk"
+name = "otel-instrumentation-claude-agent-sdk"
 dynamic = ["version"]
 description = "OpenTelemetry instrumentation for the Anthropic Claude Agent SDK"
 readme = "README.md"
