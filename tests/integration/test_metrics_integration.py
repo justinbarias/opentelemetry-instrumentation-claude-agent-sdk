@@ -8,6 +8,7 @@ from opentelemetry.instrumentation.claude_agent_sdk._constants import (
     ERROR_TYPE,
     GEN_AI_CLIENT_OPERATION_DURATION,
     GEN_AI_CLIENT_TOKEN_USAGE,
+    GEN_AI_PROVIDER_NAME,
     GEN_AI_TOKEN_TYPE,
 )
 from tests.integration.conftest import get_metric_data_points, make_cheap_options, requires_auth
@@ -60,3 +61,21 @@ class TestMetricsIntegration:
         for dp in points:
             attrs = dict(dp.attributes)
             assert ERROR_TYPE not in attrs
+
+    async def test_metric_dimensions_use_provider_name(self, instrumentor, metric_reader):
+        """Metrics should use gen_ai.provider.name, not gen_ai.system (FR-019)."""
+        import claude_agent_sdk
+
+        async for _ in claude_agent_sdk.query(
+            prompt="What is 2+2? Reply with just the number.", options=make_cheap_options()
+        ):
+            pass
+
+        # Check token usage metric dimensions
+        points = get_metric_data_points(metric_reader, GEN_AI_CLIENT_TOKEN_USAGE)
+        assert len(points) >= 1
+        for dp in points:
+            attrs = dict(dp.attributes)
+            assert GEN_AI_PROVIDER_NAME in attrs
+            assert attrs[GEN_AI_PROVIDER_NAME] == "anthropic"
+            assert "gen_ai.system" not in attrs

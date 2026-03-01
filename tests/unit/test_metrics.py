@@ -7,7 +7,7 @@ from opentelemetry.instrumentation.claude_agent_sdk._constants import (
     GEN_AI_CLIENT_OPERATION_DURATION,
     GEN_AI_CLIENT_TOKEN_USAGE,
     GEN_AI_OPERATION_NAME,
-    GEN_AI_SYSTEM,
+    GEN_AI_PROVIDER_NAME,
     GEN_AI_TOKEN_TYPE,
     OPERATION_INVOKE_AGENT,
     SYSTEM_ANTHROPIC,
@@ -60,7 +60,7 @@ class TestRecordTokenUsage:
 
         base_attrs = {
             GEN_AI_OPERATION_NAME: OPERATION_INVOKE_AGENT,
-            GEN_AI_SYSTEM: SYSTEM_ANTHROPIC,
+            GEN_AI_PROVIDER_NAME: SYSTEM_ANTHROPIC,
         }
         record_token_usage(histogram, input_tokens=100, output_tokens=50, attributes=base_attrs)
 
@@ -90,7 +90,7 @@ class TestRecordDuration:
 
         base_attrs = {
             GEN_AI_OPERATION_NAME: OPERATION_INVOKE_AGENT,
-            GEN_AI_SYSTEM: SYSTEM_ANTHROPIC,
+            GEN_AI_PROVIDER_NAME: SYSTEM_ANTHROPIC,
         }
         record_duration(histogram, duration_seconds=1.5, attributes=base_attrs)
 
@@ -108,7 +108,7 @@ class TestRecordDuration:
 
         base_attrs = {
             GEN_AI_OPERATION_NAME: OPERATION_INVOKE_AGENT,
-            GEN_AI_SYSTEM: SYSTEM_ANTHROPIC,
+            GEN_AI_PROVIDER_NAME: SYSTEM_ANTHROPIC,
         }
         record_duration(histogram, duration_seconds=0.5, attributes=base_attrs, error_type="ValueError")
 

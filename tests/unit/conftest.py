@@ -64,6 +64,46 @@ class MockClaudeAgentOptions:
     system_prompt: str | None = None
 
 
+# --- Mock Tool Hook Inputs ---
+
+
+@dataclass
+class MockPreToolUseHookInput:
+    """Mock for PreToolUse hook input_data (no tool_use_id — that's a separate callback param)."""
+
+    tool_name: str = "Bash"
+    tool_input: dict[str, Any] = field(default_factory=lambda: {"command": "echo hello"})
+    session_id: str = "test-session-123"
+
+
+@dataclass
+class MockPostToolUseHookInput:
+    """Mock for PostToolUse hook input_data."""
+
+    tool_name: str = "Bash"
+    tool_input: dict[str, Any] = field(default_factory=lambda: {"command": "echo hello"})
+    tool_response: str = "hello"
+    session_id: str = "test-session-123"
+
+
+@dataclass
+class MockPostToolUseFailureHookInput:
+    """Mock for PostToolUseFailure hook input_data."""
+
+    tool_name: str = "Bash"
+    tool_input: dict[str, Any] = field(default_factory=lambda: {"command": "bad-command"})
+    error: str = "Command failed with exit code 1"
+    is_interrupt: bool = False
+    session_id: str = "test-session-123"
+
+
+@dataclass
+class MockHookContext:
+    """Mock for hook context parameter."""
+
+    signal: Any = None
+
+
 # --- OTel Test Fixtures ---
 
 

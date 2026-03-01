@@ -49,7 +49,7 @@ A developer debugging agent behavior sees each tool call made during a Claude in
 
 ---
 
-### User Story 3 - GenAI Client Metrics (Priority: P2)
+### User Story 3 - GenAI Client Metrics (Priority: P2) — COMPLETE
 
 A platform operator monitoring a fleet of agents in production sees standardized GenAI metrics flowing to their metrics backend. They can build dashboards showing token consumption histograms broken down by model and operation, operation duration distributions, and error rates — all using standard GenAI metric names that work with community dashboards and alerting templates.
 
