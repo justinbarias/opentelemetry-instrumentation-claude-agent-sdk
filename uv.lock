@@ -1087,8 +1087,8 @@ instruments = [
 requires-dist = [
     { name = "bandit", extras = ["toml"], marker = "extra == 'dev'", specifier = ">=1.7" },
     { name = "black", marker = "extra == 'dev'", specifier = ">=23.0" },
-    { name = "claude-agent-sdk", marker = "extra == 'dev'", specifier = ">=0.1.37" },
-    { name = "claude-agent-sdk", marker = "extra == 'instruments'", specifier = ">=0.1.37" },
+    { name = "claude-agent-sdk", marker = "extra == 'dev'", specifier = ">=0.1.44" },
+    { name = "claude-agent-sdk", marker = "extra == 'instruments'", specifier = ">=0.1.44" },
     { name = "detect-secrets", marker = "extra == 'dev'", specifier = ">=1.4" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
     { name = "opentelemetry-api", specifier = "~=1.12" },

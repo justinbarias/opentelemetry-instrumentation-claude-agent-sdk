@@ -12,8 +12,8 @@ from opentelemetry.trace import get_tracer_provider
 
 from opentelemetry.instrumentation.claude_agent_sdk._constants import (
     GEN_AI_OPERATION_NAME,
+    GEN_AI_PROVIDER_NAME,
     GEN_AI_REQUEST_MODEL,
-    GEN_AI_SYSTEM,
     OPERATION_INVOKE_AGENT,
     SYSTEM_ANTHROPIC,
 )
@@ -119,7 +119,10 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
 
     def get_instrumentation_hooks(self) -> dict[str, list[Any]]:
         """Escape hatch returning raw hooks dict for manual wiring."""
-        return build_instrumentation_hooks()
+        return build_instrumentation_hooks(
+            tracer=getattr(self, "_tracer", None),
+            capture_content=getattr(self, "_capture_content", False),
+        )
 
     # --- Wrapper implementations ---
 
@@ -151,7 +154,7 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
             options = claude_agent_sdk.ClaudeAgentOptions()
             kwargs["options"] = options
 
-        instrumentation_hooks = build_instrumentation_hooks()
+        instrumentation_hooks = build_instrumentation_hooks(tracer=self._tracer, capture_content=self._capture_content)
         options.hooks = merge_hooks(getattr(options, "hooks", None) or {}, instrumentation_hooks)
 
         span = create_invoke_agent_span(
@@ -198,7 +201,7 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
 
                         metric_attrs = {
                             GEN_AI_OPERATION_NAME: OPERATION_INVOKE_AGENT,
-                            GEN_AI_SYSTEM: SYSTEM_ANTHROPIC,
+                            GEN_AI_PROVIDER_NAME: SYSTEM_ANTHROPIC,
                         }
                         if ctx.model:
                             metric_attrs[GEN_AI_REQUEST_MODEL] = ctx.model
@@ -220,7 +223,7 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
             duration = time.monotonic() - ctx.start_time
             metric_attrs = {
                 GEN_AI_OPERATION_NAME: OPERATION_INVOKE_AGENT,
-                GEN_AI_SYSTEM: SYSTEM_ANTHROPIC,
+                GEN_AI_PROVIDER_NAME: SYSTEM_ANTHROPIC,
             }
             if ctx.model:
                 metric_attrs[GEN_AI_REQUEST_MODEL] = ctx.model
@@ -249,7 +252,9 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
         # Inject instrumentation hooks
         options = getattr(instance, "options", None)
         if options is not None:
-            instrumentation_hooks = build_instrumentation_hooks()
+            instrumentation_hooks = build_instrumentation_hooks(
+                tracer=self._tracer, capture_content=self._capture_content
+            )
             options.hooks = merge_hooks(getattr(options, "hooks", None) or {}, instrumentation_hooks)
 
         # Store OTel config on the client instance
@@ -353,7 +358,7 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
 
                         metric_attrs = {
                             GEN_AI_OPERATION_NAME: OPERATION_INVOKE_AGENT,
-                            GEN_AI_SYSTEM: SYSTEM_ANTHROPIC,
+                            GEN_AI_PROVIDER_NAME: SYSTEM_ANTHROPIC,
                         }
                         if ctx.model:
                             metric_attrs[GEN_AI_REQUEST_MODEL] = ctx.model
@@ -374,7 +379,7 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
             duration = time.monotonic() - ctx.start_time
             metric_attrs = {
                 GEN_AI_OPERATION_NAME: OPERATION_INVOKE_AGENT,
-                GEN_AI_SYSTEM: SYSTEM_ANTHROPIC,
+                GEN_AI_PROVIDER_NAME: SYSTEM_ANTHROPIC,
             }
             if ctx.model:
                 metric_attrs[GEN_AI_REQUEST_MODEL] = ctx.model

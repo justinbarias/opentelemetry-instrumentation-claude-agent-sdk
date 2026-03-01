@@ -16,15 +16,23 @@ from opentelemetry.instrumentation.claude_agent_sdk._constants import (
     GEN_AI_RESPONSE_FINISH_REASONS,
     GEN_AI_RESPONSE_MODEL,
     GEN_AI_SYSTEM,
+    GEN_AI_TOOL_CALL_ID,
+    GEN_AI_TOOL_NAME,
+    GEN_AI_TOOL_TYPE,
     GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS,
     GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS,
     GEN_AI_USAGE_INPUT_TOKENS,
     GEN_AI_USAGE_OUTPUT_TOKENS,
+    MCP_TOOL_PREFIX,
+    OPERATION_EXECUTE_TOOL,
     OPERATION_INVOKE_AGENT,
     SYSTEM_ANTHROPIC,
+    TOOL_TYPE_EXTENSION,
+    TOOL_TYPE_FUNCTION,
 )
 
 if TYPE_CHECKING:
+    from opentelemetry.context import Context
     from opentelemetry.trace import Span
 
 
@@ -115,3 +123,70 @@ def set_error_attributes(span: Span, exception: BaseException) -> None:
     error_type = type(exception).__qualname__
     span.set_attribute(ERROR_TYPE, error_type)
     span.set_status(StatusCode.ERROR, str(exception))
+
+
+# --- Tool span helpers ---
+
+
+def derive_tool_type(tool_name: str) -> str:
+    """Derive tool type from tool name.
+
+    'mcp__*' tools are 'extension' (MCP tools), all others are 'function'.
+    """
+    if tool_name.startswith(MCP_TOOL_PREFIX):
+        return TOOL_TYPE_EXTENSION
+    return TOOL_TYPE_FUNCTION
+
+
+def create_execute_tool_span(
+    tracer: Tracer,
+    tool_name: str,
+    tool_use_id: str,
+    parent_context: Context | None = None,
+) -> Span:
+    """Create an execute_tool INTERNAL span with tool attributes.
+
+    Args:
+        tracer: OTel tracer instance.
+        tool_name: The tool name (e.g., 'Bash', 'mcp__server__action').
+        tool_use_id: Unique tool call ID for correlation.
+        parent_context: Explicit parent context.  When provided the tool span
+            becomes a child of the span stored in *parent_context*.  When
+            ``None`` OTel auto-parents under the current span (works in unit
+            tests but not in real SDK hook callbacks which run in a separate
+            async context).
+
+    Returns:
+        A started span (must be ended by caller).
+    """
+    span_name = f"{OPERATION_EXECUTE_TOOL} {tool_name}"
+    tool_type = derive_tool_type(tool_name)
+
+    attributes: dict[str, str] = {
+        GEN_AI_OPERATION_NAME: OPERATION_EXECUTE_TOOL,
+        GEN_AI_SYSTEM: SYSTEM_ANTHROPIC,
+        GEN_AI_TOOL_NAME: tool_name,
+        GEN_AI_TOOL_CALL_ID: tool_use_id,
+        GEN_AI_TOOL_TYPE: tool_type,
+    }
+
+    return tracer.start_span(
+        name=span_name,
+        kind=SpanKind.INTERNAL,
+        attributes=attributes,
+        context=parent_context,
+    )
+
+
+def set_tool_error_attributes(span: Span, error_message: str) -> None:
+    """Set error.type and ERROR status on a tool span.
+
+    Unlike set_error_attributes (which takes an exception), this takes a raw error
+    string from the SDK hook, since tool errors are strings, not exceptions.
+
+    Args:
+        span: The tool span to annotate.
+        error_message: Raw error string from PostToolUseFailure.
+    """
+    span.set_attribute(ERROR_TYPE, error_message)
+    span.set_status(StatusCode.ERROR, error_message)

@@ -5,8 +5,9 @@ from __future__ import annotations
 import time
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+from typing import Any
 
-from opentelemetry.trace import Span, StatusCode
+from opentelemetry.trace import Span, StatusCode, set_span_in_context
 
 
 @dataclass
@@ -24,6 +25,12 @@ class InvocationContext:
     session_id: str | None = None
     capture_content: bool = False
     _model_set: bool = field(default=False, repr=False)
+    parent_otel_context: Any = field(default=None, repr=False)
+
+    def __post_init__(self) -> None:
+        """Build parent OTel context from the invocation span."""
+        if self.parent_otel_context is None:
+            self.parent_otel_context = set_span_in_context(self.invocation_span)
 
     def set_model(self, model: str) -> None:
         """Set model name (set-once semantics)."""

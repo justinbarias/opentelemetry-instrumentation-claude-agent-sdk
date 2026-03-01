@@ -66,6 +66,17 @@ def instrumentor(tracer_provider: SDKTracerProvider, meter_provider: SDKMeterPro
 
 
 @pytest.fixture()
+def instrumentor_with_content_capture(
+    tracer_provider: SDKTracerProvider, meter_provider: SDKMeterProvider
+) -> ClaudeAgentSdkInstrumentor:
+    """Instrument with capture_content=True."""
+    inst = ClaudeAgentSdkInstrumentor()
+    inst.instrument(tracer_provider=tracer_provider, meter_provider=meter_provider, capture_content=True)
+    yield inst  # type: ignore[misc]
+    inst.uninstrument()
+
+
+@pytest.fixture()
 def instrumentor_with_name(
     tracer_provider: SDKTracerProvider, meter_provider: SDKMeterProvider
 ) -> ClaudeAgentSdkInstrumentor:
@@ -82,6 +93,11 @@ def instrumentor_with_name(
 def get_invoke_agent_spans(exporter: InMemorySpanExporter) -> list[Any]:
     """Return finished spans whose name starts with 'invoke_agent'."""
     return [s for s in exporter.get_finished_spans() if s.name.startswith("invoke_agent")]
+
+
+def get_execute_tool_spans(exporter: InMemorySpanExporter) -> list[Any]:
+    """Return finished spans whose name starts with 'execute_tool'."""
+    return [s for s in exporter.get_finished_spans() if s.name.startswith("execute_tool")]
 
 
 def get_metric_data_points(reader: InMemoryMetricReader, metric_name: str) -> list[Any]:

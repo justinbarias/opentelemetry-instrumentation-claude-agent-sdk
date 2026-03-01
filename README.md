@@ -11,6 +11,8 @@ This package provides automatic tracing and metrics for Claude Agent SDK operati
 ## Features
 
 - Automatic span creation for `query()` and `ClaudeSDKClient` operations
+- Hook-driven `execute_tool` child spans for every tool call (PreToolUse/PostToolUse/PostToolUseFailure)
+- Optional tool content capture (arguments and results) via `capture_content=True`
 - Token usage tracking (input, output, cache creation, cache read)
 - Operation duration histograms
 - Conversation ID propagation across multi-turn interactions
@@ -35,7 +37,7 @@ pip install opentelemetry-instrumentation-claude-agent-sdk[instruments]
 - Python >= 3.10
 - opentelemetry-api >= 1.12
 - opentelemetry-instrumentation >= 0.50b0
-- claude-agent-sdk >= 0.1.37
+- claude-agent-sdk >= 0.1.44 (hooks support in `query()` requires >= 0.1.44)
 
 ## Quick Start
 
@@ -127,7 +129,9 @@ await client.disconnect()
 
 ### Spans
 
-Each `query()` call or `ClaudeSDKClient.query()`/`receive_response()` cycle produces one `invoke_agent` span with kind `CLIENT`.
+Each `query()` call or `ClaudeSDKClient.query()`/`receive_response()` cycle produces one `invoke_agent` span with kind `CLIENT`. When tools are used, each tool call produces an `execute_tool` child span with kind `INTERNAL`.
+
+#### invoke_agent span (CLIENT)
 
 | Attribute | Type | Description |
 |-----------|------|-------------|
@@ -143,6 +147,19 @@ Each `query()` call or `ClaudeSDKClient.query()`/`receive_response()` cycle prod
 | `gen_ai.response.finish_reasons` | string[] | e.g. `["end_turn"]`, `["error"]`, `["max_tokens"]` |
 | `gen_ai.conversation.id` | string | Session ID (shared across multi-turn) |
 | `error.type` | string | Exception type (on error only) |
+
+#### execute_tool span (INTERNAL, child of invoke_agent)
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `gen_ai.operation.name` | string | Always `"execute_tool"` |
+| `gen_ai.system` | string | Always `"anthropic"` |
+| `gen_ai.tool.name` | string | Tool name (e.g., `"Bash"`, `"Read"`) |
+| `gen_ai.tool.call.id` | string | Unique tool use ID for correlation |
+| `gen_ai.tool.type` | string | `"function"` for built-in tools, `"extension"` for MCP tools (`mcp__*`) |
+| `gen_ai.tool.call.arguments` | string | Tool input (only when `capture_content=True`) |
+| `gen_ai.tool.call.result` | string | Tool output (only when `capture_content=True`) |
+| `error.type` | string | Error message (on tool failure only) |
 
 ### Metrics
 
@@ -206,7 +223,7 @@ Integration tests make real API calls to Claude. To run them:
    make test-integration
    ```
 
-Integration tests use `max_turns=1` and `permission_mode="plan"` to minimize cost and prevent runaway execution.
+Integration tests use `max_turns=3` and `permission_mode="bypassPermissions"` for tool tracing tests, or `max_turns=1` for basic span/metric tests.
 
 ### Code Quality
 
@@ -233,8 +250,8 @@ src/opentelemetry/instrumentation/claude_agent_sdk/
     _context.py          # Per-invocation context via contextvars
     _constants.py        # GenAI semantic convention constants
 tests/
-    unit/                # Unit tests (mock SDK, 58 tests)
-    integration/         # Integration tests (real API, 18 tests)
+    unit/                # Unit tests (mock SDK, 89 tests)
+    integration/         # Integration tests (real API, 28 tests)
 ```
 
 ## License

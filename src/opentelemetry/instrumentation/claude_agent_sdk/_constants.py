@@ -21,6 +21,20 @@ ERROR_TYPE = "error.type"
 
 # --- GenAI Operation Names ---
 OPERATION_INVOKE_AGENT = "invoke_agent"
+OPERATION_EXECUTE_TOOL = "execute_tool"
+
+# --- Tool Attributes ---
+GEN_AI_TOOL_NAME = "gen_ai.tool.name"
+GEN_AI_TOOL_CALL_ID = "gen_ai.tool.call.id"
+GEN_AI_TOOL_TYPE = "gen_ai.tool.type"
+GEN_AI_TOOL_CALL_ARGUMENTS = "gen_ai.tool.call.arguments"
+GEN_AI_TOOL_CALL_RESULT = "gen_ai.tool.call.result"
+TOOL_TYPE_EXTENSION = "extension"
+TOOL_TYPE_FUNCTION = "function"
+MCP_TOOL_PREFIX = "mcp__"
+
+# --- Provider Name (FR-019) ---
+GEN_AI_PROVIDER_NAME = "gen_ai.provider.name"
 
 # --- GenAI System Values ---
 SYSTEM_ANTHROPIC = "anthropic"
