@@ -41,7 +41,7 @@ dev = [
     "pytest-asyncio >= 0.21",
     "pytest-mock >= 3.10",
     "pytest-xdist >= 3.0",
-    "black >= 23.0",
+    "black >= 26.3.1",
     "ruff >= 0.4.0",
     "mypy >= 1.10",
     "pre-commit >= 3.0",
@@ -60,6 +60,14 @@ Issues = "https://github.com/justinbarias/opentelemetry-instrumentation-claude-a
 
 [project.entry-points.opentelemetry_instrumentor]
 claude-agent-sdk = "opentelemetry.instrumentation.claude_agent_sdk:ClaudeAgentSdkInstrumentor"
+
+[tool.uv]
+constraint-dependencies = [
+    "cryptography >= 46.0.7",
+    "pygments >= 2.20.0",
+    "pyjwt >= 2.12.0",
+    "requests >= 2.33.0",
+]
 
 [tool.hatch.version]
 source = "vcs"
