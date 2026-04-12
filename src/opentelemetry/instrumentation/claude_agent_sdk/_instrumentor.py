@@ -249,11 +249,15 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
         """Wrap ClaudeSDKClient.__init__() to inject hooks."""
         wrapped(*args, **kwargs)
 
-        # Inject instrumentation hooks
+        # Inject instrumentation hooks — pass ``instance`` so hook closures
+        # can fall back to ``instance._otel_invocation_ctx`` when the
+        # ContextVar is empty (asyncio.gather / TaskGroup concurrency).
         options = getattr(instance, "options", None)
         if options is not None:
             instrumentation_hooks = build_instrumentation_hooks(
-                tracer=self._tracer, capture_content=self._capture_content
+                tracer=self._tracer,
+                capture_content=self._capture_content,
+                instance=instance,
             )
             options.hooks = merge_hooks(getattr(options, "hooks", None) or {}, instrumentation_hooks)
 

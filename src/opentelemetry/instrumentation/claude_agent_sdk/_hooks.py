@@ -18,6 +18,8 @@ from opentelemetry.instrumentation.claude_agent_sdk._spans import (
 if TYPE_CHECKING:
     from opentelemetry.trace import Tracer
 
+    from opentelemetry.instrumentation.claude_agent_sdk._context import InvocationContext
+
 
 def _get_field(data: Any, field: str, default: Any = None) -> Any:
     """Get a field from hook input data (dict from SDK or object from tests)."""
@@ -80,16 +82,29 @@ def merge_hooks(
 def build_instrumentation_hooks(
     tracer: Tracer | None = None,
     capture_content: bool = False,
+    instance: Any = None,
 ) -> dict[str, list[Any]]:
     """Build the instrumentation hooks dict.
 
     Args:
         tracer: OTel tracer instance. When None, only Stop hook is returned (backward compat).
         capture_content: Whether to capture tool arguments/results as span attributes.
+        instance: Optional ``ClaudeSDKClient`` instance.  When provided the
+            hooks fall back to ``instance._otel_invocation_ctx`` if the
+            ``ContextVar`` is empty — which happens when hooks fire in a
+            different ``asyncio.Task`` context (e.g. ``asyncio.gather``).
 
     Returns:
         Dict mapping event names to lists of hook callbacks.
     """
+
+    def _resolve_ctx() -> InvocationContext | None:
+        """ContextVar first, then instance attribute fallback."""
+        ctx = get_invocation_context()
+        if ctx is None and instance is not None:
+            ctx = getattr(instance, "_otel_invocation_ctx", None)
+        return ctx
+
     hooks: dict[str, list[Any]] = {
         "Stop": [_make_hook_matcher(_on_stop)],
     }
@@ -103,7 +118,7 @@ def build_instrumentation_hooks(
         input_data: Any, tool_use_id: str | None = None, context: Any = None, **kwargs: Any
     ) -> dict[str, Any]:
         """Hook callback for PreToolUse — start an execute_tool span."""
-        ctx = get_invocation_context()
+        ctx = _resolve_ctx()
         if ctx is None or tool_use_id is None:
             return {}
 
@@ -132,7 +147,7 @@ def build_instrumentation_hooks(
         input_data: Any, tool_use_id: str | None = None, context: Any = None, **kwargs: Any
     ) -> dict[str, Any]:
         """Hook callback for PostToolUse — end the execute_tool span successfully."""
-        ctx = get_invocation_context()
+        ctx = _resolve_ctx()
         if ctx is None or tool_use_id is None:
             return {}
 
@@ -154,7 +169,7 @@ def build_instrumentation_hooks(
         input_data: Any, tool_use_id: str | None = None, context: Any = None, **kwargs: Any
     ) -> dict[str, Any]:
         """Hook callback for PostToolUseFailure — end the execute_tool span with error."""
-        ctx = get_invocation_context()
+        ctx = _resolve_ctx()
         if ctx is None or tool_use_id is None:
             return {}
 
