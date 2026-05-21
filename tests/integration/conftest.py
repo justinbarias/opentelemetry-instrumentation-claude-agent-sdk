@@ -8,6 +8,8 @@ from typing import Any
 
 import pytest
 from dotenv import load_dotenv
+from opentelemetry.sdk._logs import LoggerProvider
+from opentelemetry.sdk._logs.export import InMemoryLogRecordExporter, SimpleLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider as SDKMeterProvider
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 from opentelemetry.sdk.trace import TracerProvider as SDKTracerProvider
@@ -57,10 +59,39 @@ def meter_provider(metric_reader: InMemoryMetricReader) -> SDKMeterProvider:
 
 
 @pytest.fixture()
+def log_record_exporter() -> InMemoryLogRecordExporter:
+    return InMemoryLogRecordExporter()
+
+
+@pytest.fixture()
+def logger_provider(log_record_exporter: InMemoryLogRecordExporter) -> LoggerProvider:
+    provider = LoggerProvider()
+    provider.add_log_record_processor(SimpleLogRecordProcessor(log_record_exporter))
+    return provider
+
+
+@pytest.fixture()
 def instrumentor(tracer_provider: SDKTracerProvider, meter_provider: SDKMeterProvider) -> ClaudeAgentSdkInstrumentor:
     """Instrument before the test, uninstrument after."""
     inst = ClaudeAgentSdkInstrumentor()
     inst.instrument(tracer_provider=tracer_provider, meter_provider=meter_provider)
+    yield inst  # type: ignore[misc]
+    inst.uninstrument()
+
+
+@pytest.fixture()
+def instrumentor_with_logs(
+    tracer_provider: SDKTracerProvider,
+    meter_provider: SDKMeterProvider,
+    logger_provider: LoggerProvider,
+) -> ClaudeAgentSdkInstrumentor:
+    """Instrument with all three providers (tracer, meter, logger)."""
+    inst = ClaudeAgentSdkInstrumentor()
+    inst.instrument(
+        tracer_provider=tracer_provider,
+        meter_provider=meter_provider,
+        logger_provider=logger_provider,
+    )
     yield inst  # type: ignore[misc]
     inst.uninstrument()
 
