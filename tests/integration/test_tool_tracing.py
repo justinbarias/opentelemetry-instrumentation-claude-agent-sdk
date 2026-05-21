@@ -12,7 +12,7 @@ from opentelemetry.trace import SpanKind, StatusCode
 
 from opentelemetry.instrumentation.claude_agent_sdk._constants import (
     GEN_AI_OPERATION_NAME,
-    GEN_AI_SYSTEM,
+    GEN_AI_PROVIDER_NAME,
     GEN_AI_TOOL_CALL_ARGUMENTS,
     GEN_AI_TOOL_CALL_ID,
     GEN_AI_TOOL_CALL_RESULT,
@@ -115,7 +115,7 @@ class TestToolTracingEndToEnd:
 
         attrs = dict(tool_spans[0].attributes or {})
         assert attrs[GEN_AI_OPERATION_NAME] == OPERATION_EXECUTE_TOOL
-        assert attrs[GEN_AI_SYSTEM] == SYSTEM_ANTHROPIC
+        assert attrs[GEN_AI_PROVIDER_NAME] == SYSTEM_ANTHROPIC
         assert GEN_AI_TOOL_NAME in attrs
         assert GEN_AI_TOOL_CALL_ID in attrs
         assert GEN_AI_TOOL_TYPE in attrs

@@ -133,35 +133,37 @@ await client.disconnect()
 
 Each `query()` call or `ClaudeSDKClient.query()`/`receive_response()` cycle produces one `invoke_agent` span with kind `CLIENT`. When tools are used, each tool call produces an `execute_tool` child span with kind `INTERNAL`.
 
+All telemetry is emitted under schema URL `https://opentelemetry.io/schemas/gen-ai/1.42.0`.
+
 #### invoke_agent span (CLIENT)
 
 | Attribute | Type | Description |
 |-----------|------|-------------|
 | `gen_ai.operation.name` | string | Always `"invoke_agent"` |
-| `gen_ai.system` | string | Always `"anthropic"` |
+| `gen_ai.provider.name` | string | Always `"anthropic"` |
 | `gen_ai.agent.name` | string | Agent name (if configured) |
 | `gen_ai.request.model` | string | Requested model (from options) |
 | `gen_ai.response.model` | string | Actual model used (from response) |
 | `gen_ai.usage.input_tokens` | int | Total input tokens (including cache) |
 | `gen_ai.usage.output_tokens` | int | Output tokens |
-| `gen_ai.usage.cache_creation_input_tokens` | int | Cache creation tokens (if > 0) |
-| `gen_ai.usage.cache_read_input_tokens` | int | Cache read tokens (if > 0) |
-| `gen_ai.response.finish_reasons` | string[] | e.g. `["end_turn"]`, `["error"]`, `["max_tokens"]` |
+| `gen_ai.usage.cache_creation.input_tokens` | int | Cache creation tokens (if > 0) |
+| `gen_ai.usage.cache_read.input_tokens` | int | Cache read tokens (if > 0) |
+| `gen_ai.response.finish_reasons` | string[] | e.g. `["end_turn"]`, `["error"]`, `["max_turns"]` |
 | `gen_ai.conversation.id` | string | Session ID (shared across multi-turn) |
-| `error.type` | string | Exception type (on error only) |
+| `error.type` | string | Exception class (on error only) |
 
 #### execute_tool span (INTERNAL, child of invoke_agent)
 
 | Attribute | Type | Description |
 |-----------|------|-------------|
 | `gen_ai.operation.name` | string | Always `"execute_tool"` |
-| `gen_ai.system` | string | Always `"anthropic"` |
+| `gen_ai.provider.name` | string | Always `"anthropic"` |
 | `gen_ai.tool.name` | string | Tool name (e.g., `"Bash"`, `"Read"`) |
 | `gen_ai.tool.call.id` | string | Unique tool use ID for correlation |
 | `gen_ai.tool.type` | string | `"function"` for built-in tools, `"extension"` for MCP tools (`mcp__*`) |
 | `gen_ai.tool.call.arguments` | string | Tool input (only when `capture_content=True`) |
 | `gen_ai.tool.call.result` | string | Tool output (only when `capture_content=True`) |
-| `error.type` | string | Error message (on tool failure only) |
+| `error.type` | string | `"_OTHER"` on tool failure (raw error preserved on span status description) |
 
 ### Metrics
 
@@ -170,7 +172,16 @@ Each `query()` call or `ClaudeSDKClient.query()`/`receive_response()` cycle prod
 | `gen_ai.client.token.usage` | Histogram | `{token}` | Token counts with `gen_ai.token.type` dimension (`"input"` or `"output"`) |
 | `gen_ai.client.operation.duration` | Histogram | `s` | Operation wall-clock duration |
 
-Both metrics include `gen_ai.operation.name`, `gen_ai.system`, and `gen_ai.request.model` as dimensions. The duration metric includes `error.type` on failure.
+Both metrics include `gen_ai.operation.name`, `gen_ai.provider.name`, and `gen_ai.request.model` as dimensions. The duration metric includes `error.type` on failure.
+
+### Events (log records)
+
+On the agent error path, two records are produced in addition to the span attributes:
+
+- The standard OTel **`exception` span event** via `span.record_exception(exc)` — carries `exception.type`, `exception.message`, `exception.stacktrace`.
+- A separate **`gen_ai.client.operation.exception`** log record (severity `WARN`) per the GenAI exceptions semconv. Emitted only when a `LoggerProvider` is configured via `instrument(logger_provider=...)` or globally.
+
+Both carry `exception.type` / `exception.message` / `exception.stacktrace`. The GenAI event also copies the operation's identifying span attributes (`gen_ai.operation.name`, `gen_ai.provider.name`, `gen_ai.request.model`, `gen_ai.conversation.id`) so backends can correlate the event without a span join.
 
 ## Configuration Options
 
@@ -178,8 +189,9 @@ Both metrics include `gen_ai.operation.name`, `gen_ai.system`, and `gen_ai.reque
 |-----------|------|---------|-------------|
 | `tracer_provider` | `TracerProvider` | Global | Custom tracer provider |
 | `meter_provider` | `MeterProvider` | Global | Custom meter provider |
+| `logger_provider` | `LoggerProvider` | Global | Custom logger provider — used to emit `gen_ai.client.operation.exception` events |
 | `agent_name` | `str` | `None` | Agent name for span names and attributes |
-| `capture_content` | `bool` | `False` | Reserved for future content capture support |
+| `capture_content` | `bool` | `False` | Capture tool arguments and results as span attributes |
 
 ## Development
 
@@ -248,6 +260,7 @@ src/opentelemetry/instrumentation/claude_agent_sdk/
     _instrumentor.py     # Core instrumentor (wraps query, ClaudeSDKClient)
     _spans.py            # Span creation and attribute helpers
     _metrics.py          # Histogram creation and recording helpers
+    _events.py           # GenAI log-record event helpers (exception event)
     _hooks.py            # SDK hook callbacks and merge utility
     _context.py          # Per-invocation context via contextvars
     _constants.py        # GenAI semantic convention constants

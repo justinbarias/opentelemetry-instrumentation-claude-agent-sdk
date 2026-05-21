@@ -8,6 +8,7 @@ from opentelemetry.trace import StatusCode
 
 from opentelemetry.instrumentation.claude_agent_sdk._constants import (
     ERROR_TYPE,
+    ERROR_TYPE_OTHER,
     GEN_AI_OPERATION_NAME,
     GEN_AI_TOOL_CALL_ARGUMENTS,
     GEN_AI_TOOL_CALL_ID,
@@ -291,7 +292,8 @@ class TestPostToolUseFailureHook:
             assert len(tool_spans) == 1
             assert tool_spans[0].status.status_code == StatusCode.ERROR
             attrs = dict(tool_spans[0].attributes or {})
-            assert attrs[ERROR_TYPE] == "Command failed with exit code 1"
+            assert attrs[ERROR_TYPE] == ERROR_TYPE_OTHER
+            assert tool_spans[0].status.description == "Command failed with exit code 1"
         finally:
             parent_span.end()
             set_invocation_context(None)
@@ -518,3 +520,56 @@ class TestToolUseIdCorrelation:
         finally:
             parent_span.end()
             set_invocation_context(None)
+
+
+# --- #5: regression test for ClaudeSDKClient asyncio-task ContextVar isolation ---
+
+
+class TestInstanceContextFallback:
+    """Issue #5 — hooks must resolve via instance._otel_invocation_ctx when the
+    ContextVar is empty, which happens when SDK hooks fire from a separately
+    spawned asyncio task whose ContextVar snapshot pre-dates set_invocation_context().
+    """
+
+    class _FakeClient:
+        """Stand-in for ClaudeSDKClient — only the attributes hooks read."""
+
+    async def test_hook_resolves_via_instance_when_contextvar_empty(self, tracer_provider, span_exporter):
+        import asyncio
+
+        tracer = tracer_provider.get_tracer("test")
+        instance = self._FakeClient()
+
+        # Build hooks with the instance fallback wired in (matches what
+        # _wrap_client_init does in production).
+        hooks = build_instrumentation_hooks(tracer=tracer, capture_content=False, instance=instance)
+        pre_cb = _get_callback(hooks, "PreToolUse")
+        post_cb = _get_callback(hooks, "PostToolUse")
+
+        # Stash an invocation context on the instance — the production code
+        # does this in _wrap_client_query. The ContextVar is *not* set.
+        parent_span = tracer.start_span("invoke_agent client-test")
+        ctx = InvocationContext(invocation_span=parent_span, capture_content=False)
+        instance._otel_invocation_ctx = ctx
+
+        # Fire the hooks from inside a freshly spawned task whose ContextVar
+        # snapshot was taken before any set_invocation_context() call —
+        # mirrors how claude_agent_sdk's `_read_messages` background task runs.
+        async def fire_hooks() -> None:
+            from opentelemetry.instrumentation.claude_agent_sdk._context import (
+                get_invocation_context,
+            )
+
+            assert get_invocation_context() is None, "ContextVar must be empty in this task"
+            await pre_cb(MockPreToolUseHookInput(tool_name="Bash"), "toolu_iso", MockHookContext())
+            await post_cb(MockPostToolUseHookInput(tool_name="Bash"), "toolu_iso", MockHookContext())
+
+        try:
+            await asyncio.create_task(fire_hooks())
+        finally:
+            parent_span.end()
+
+        # The fallback path must produce one execute_tool span.
+        tool_spans = [s for s in span_exporter.get_finished_spans() if s.name.startswith("execute_tool")]
+        assert len(tool_spans) == 1
+        assert tool_spans[0].name == "execute_tool Bash"

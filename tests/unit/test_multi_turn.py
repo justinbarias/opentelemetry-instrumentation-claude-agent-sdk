@@ -18,7 +18,7 @@ from opentelemetry.trace import SpanKind
 from opentelemetry.instrumentation.claude_agent_sdk._constants import (
     GEN_AI_CONVERSATION_ID,
     GEN_AI_OPERATION_NAME,
-    GEN_AI_SYSTEM,
+    GEN_AI_PROVIDER_NAME,
     OPERATION_INVOKE_AGENT,
     SYSTEM_ANTHROPIC,
 )
@@ -147,7 +147,7 @@ class TestClaudeSDKClientWrapper:
                 assert span.kind == SpanKind.CLIENT
                 attrs = dict(span.attributes or {})
                 assert attrs[GEN_AI_OPERATION_NAME] == OPERATION_INVOKE_AGENT
-                assert attrs[GEN_AI_SYSTEM] == SYSTEM_ANTHROPIC
+                assert attrs[GEN_AI_PROVIDER_NAME] == SYSTEM_ANTHROPIC
         finally:
             instrumentor.uninstrument()
 
