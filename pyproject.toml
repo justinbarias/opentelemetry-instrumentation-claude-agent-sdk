@@ -67,6 +67,13 @@ constraint-dependencies = [
     "pygments >= 2.20.0",
     "pyjwt >= 2.12.0",
     "requests >= 2.33.0",
+    # Transitive dev-dep CVE fixes (pip-audit)
+    "idna >= 3.15",                  # CVE-2026-45409
+    "pip >= 26.1",                   # CVE-2026-3219, CVE-2026-6357
+    "pytest >= 9.0.3",               # CVE-2025-71176
+    "python-dotenv >= 1.2.2",        # CVE-2026-28684
+    "python-multipart >= 0.0.27",    # CVE-2026-40347, CVE-2026-42561
+    "urllib3 >= 2.7.0",              # PYSEC-2026-141, PYSEC-2026-142
 ]
 
 [tool.hatch.version]

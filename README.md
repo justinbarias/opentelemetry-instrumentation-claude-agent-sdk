@@ -22,14 +22,16 @@ This package provides automatic tracing and metrics for Claude Agent SDK operati
 
 ## Installation
 
+The package is published on PyPI as **`otel-instrumentation-claude-agent-sdk`** (the import path remains `opentelemetry.instrumentation.claude_agent_sdk`):
+
 ```bash
-pip install opentelemetry-instrumentation-claude-agent-sdk
+pip install otel-instrumentation-claude-agent-sdk
 ```
 
 With the Claude Agent SDK (if not already installed):
 
 ```bash
-pip install opentelemetry-instrumentation-claude-agent-sdk[instruments]
+pip install "otel-instrumentation-claude-agent-sdk[instruments]"
 ```
 
 ## Requirements
