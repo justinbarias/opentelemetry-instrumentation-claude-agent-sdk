@@ -9,10 +9,10 @@ from opentelemetry.instrumentation.claude_agent_sdk._constants import (
     GEN_AI_AGENT_NAME,
     GEN_AI_CONVERSATION_ID,
     GEN_AI_OPERATION_NAME,
+    GEN_AI_PROVIDER_NAME,
     GEN_AI_REQUEST_MODEL,
     GEN_AI_RESPONSE_FINISH_REASONS,
     GEN_AI_RESPONSE_MODEL,
-    GEN_AI_SYSTEM,
     GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS,
     GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS,
     GEN_AI_USAGE_INPUT_TOKENS,
@@ -56,7 +56,7 @@ class TestCreateInvokeAgentSpan:
         spans = span_exporter.get_finished_spans()
         attrs = dict(spans[0].attributes or {})
         assert attrs[GEN_AI_OPERATION_NAME] == OPERATION_INVOKE_AGENT
-        assert attrs[GEN_AI_SYSTEM] == SYSTEM_ANTHROPIC
+        assert attrs[GEN_AI_PROVIDER_NAME] == SYSTEM_ANTHROPIC
         assert attrs[GEN_AI_AGENT_NAME] == "test-agent"
         assert attrs[GEN_AI_REQUEST_MODEL] == "claude-sonnet-4-20250514"
 
@@ -169,6 +169,9 @@ class TestSetResultAttributes:
         assert attrs[GEN_AI_RESPONSE_FINISH_REASONS] == ("error",)
 
     def test_sets_finish_reason_max_turns(self, tracer_provider, span_exporter):
+        # `max_turns` is an SDK-side turn-count cap, NOT the model-side
+        # `max_tokens` stop reason — it must pass through unchanged so
+        # downstream consumers can distinguish the two cases.
         tracer = tracer_provider.get_tracer("test")
         span = tracer.start_span("test")
 
@@ -178,7 +181,7 @@ class TestSetResultAttributes:
 
         spans = span_exporter.get_finished_spans()
         attrs = dict(spans[0].attributes or {})
-        assert attrs[GEN_AI_RESPONSE_FINISH_REASONS] == ("max_tokens",)
+        assert attrs[GEN_AI_RESPONSE_FINISH_REASONS] == ("max_turns",)
 
     def test_passthrough_unknown_finish_reason(self, tracer_provider, span_exporter):
         tracer = tracer_provider.get_tracer("test")

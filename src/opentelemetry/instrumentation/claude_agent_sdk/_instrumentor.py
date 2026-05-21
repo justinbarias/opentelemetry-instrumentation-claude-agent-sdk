@@ -6,20 +6,26 @@ import time
 from typing import TYPE_CHECKING, Any
 
 import wrapt
+from opentelemetry._logs import get_logger_provider
 from opentelemetry.instrumentation.instrumentor import BaseInstrumentor  # type: ignore[attr-defined]
 from opentelemetry.metrics import get_meter_provider
 from opentelemetry.trace import get_tracer_provider
 
 from opentelemetry.instrumentation.claude_agent_sdk._constants import (
+    GEN_AI_CONVERSATION_ID,
     GEN_AI_OPERATION_NAME,
     GEN_AI_PROVIDER_NAME,
     GEN_AI_REQUEST_MODEL,
     OPERATION_INVOKE_AGENT,
+    SCHEMA_URL,
     SYSTEM_ANTHROPIC,
 )
 from opentelemetry.instrumentation.claude_agent_sdk._context import (
     InvocationContext,
     set_invocation_context,
+)
+from opentelemetry.instrumentation.claude_agent_sdk._events import (
+    emit_operation_exception_event,
 )
 from opentelemetry.instrumentation.claude_agent_sdk._hooks import (
     build_instrumentation_hooks,
@@ -45,6 +51,24 @@ if TYPE_CHECKING:
 _INSTRUMENTATION_NAME = "opentelemetry.instrumentation.claude_agent_sdk"
 
 
+def _exception_event_span_attrs(ctx: InvocationContext) -> dict[str, Any]:
+    """Build the subset of span attributes to copy onto an exception event.
+
+    Per spec the instrumentation MAY include the operation's span attributes
+    on the event. We only copy stable, low-cardinality identifiers so the
+    event remains useful for correlation without bloating log records.
+    """
+    attrs: dict[str, Any] = {
+        GEN_AI_OPERATION_NAME: OPERATION_INVOKE_AGENT,
+        GEN_AI_PROVIDER_NAME: SYSTEM_ANTHROPIC,
+    }
+    if ctx.model:
+        attrs[GEN_AI_REQUEST_MODEL] = ctx.model
+    if ctx.session_id:
+        attrs[GEN_AI_CONVERSATION_ID] = ctx.session_id
+    return attrs
+
+
 class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
     """OpenTelemetry instrumentor for the Anthropic Claude Agent SDK."""
 
@@ -54,11 +78,13 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
     def _instrument(self, **kwargs: Any) -> None:
         tracer_provider = kwargs.get("tracer_provider") or get_tracer_provider()
         meter_provider = kwargs.get("meter_provider") or get_meter_provider()
+        logger_provider = kwargs.get("logger_provider") or get_logger_provider()
         capture_content = kwargs.get("capture_content", False)
         agent_name = kwargs.get("agent_name")
 
-        tracer = tracer_provider.get_tracer(_INSTRUMENTATION_NAME, __version__)
-        meter = meter_provider.get_meter(_INSTRUMENTATION_NAME, __version__)
+        tracer = tracer_provider.get_tracer(_INSTRUMENTATION_NAME, __version__, SCHEMA_URL)
+        meter = meter_provider.get_meter(_INSTRUMENTATION_NAME, __version__, SCHEMA_URL)
+        logger = logger_provider.get_logger(_INSTRUMENTATION_NAME, __version__, SCHEMA_URL)
 
         token_histogram = create_token_usage_histogram(meter)
         duration_histogram = create_duration_histogram(meter)
@@ -66,6 +92,7 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
         # Store config for wrappers
         self._tracer = tracer
         self._meter = meter
+        self._logger = logger
         self._token_histogram = token_histogram
         self._duration_histogram = duration_histogram
         self._capture_content = capture_content
@@ -216,7 +243,13 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
 
         except BaseException as exc:
             error_occurred = exc
+            span.record_exception(exc)
             set_error_attributes(span, exc)
+            emit_operation_exception_event(
+                self._logger,
+                exc,
+                _exception_event_span_attrs(ctx),
+            )
             raise
         finally:
             # Record duration
@@ -264,6 +297,7 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
         # Store OTel config on the client instance
         instance._otel_tracer = self._tracer
         instance._otel_meter = self._meter
+        instance._otel_logger = self._logger
         instance._otel_token_histogram = self._token_histogram
         instance._otel_duration_histogram = self._duration_histogram
         instance._otel_capture_content = self._capture_content
@@ -377,7 +411,13 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
 
         except BaseException as exc:
             error_occurred = exc
+            span.record_exception(exc)
             set_error_attributes(span, exc)
+            emit_operation_exception_event(
+                getattr(instance, "_otel_logger", self._logger),
+                exc,
+                _exception_event_span_attrs(ctx),
+            )
             raise
         finally:
             duration = time.monotonic() - ctx.start_time

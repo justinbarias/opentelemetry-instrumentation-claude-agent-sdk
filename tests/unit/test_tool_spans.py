@@ -6,8 +6,9 @@ from opentelemetry.trace import SpanKind, StatusCode
 
 from opentelemetry.instrumentation.claude_agent_sdk._constants import (
     ERROR_TYPE,
+    ERROR_TYPE_OTHER,
     GEN_AI_OPERATION_NAME,
-    GEN_AI_SYSTEM,
+    GEN_AI_PROVIDER_NAME,
     GEN_AI_TOOL_CALL_ID,
     GEN_AI_TOOL_NAME,
     GEN_AI_TOOL_TYPE,
@@ -59,7 +60,7 @@ class TestCreateExecuteToolSpan:
         spans = span_exporter.get_finished_spans()
         attrs = dict(spans[0].attributes or {})
         assert attrs[GEN_AI_OPERATION_NAME] == OPERATION_EXECUTE_TOOL
-        assert attrs[GEN_AI_SYSTEM] == SYSTEM_ANTHROPIC
+        assert attrs[GEN_AI_PROVIDER_NAME] == SYSTEM_ANTHROPIC
         assert attrs[GEN_AI_TOOL_NAME] == "Bash"
         assert attrs[GEN_AI_TOOL_CALL_ID] == "toolu_456"
         assert attrs[GEN_AI_TOOL_TYPE] == TOOL_TYPE_FUNCTION
@@ -102,10 +103,13 @@ class TestSetToolErrorAttributes:
 
         spans = span_exporter.get_finished_spans()
         attrs = dict(spans[0].attributes or {})
-        assert attrs[ERROR_TYPE] == "Command failed with exit code 1"
+        # `error.type` must be low-cardinality per OTel semconv. The raw
+        # message is preserved on the span status description below.
+        assert attrs[ERROR_TYPE] == ERROR_TYPE_OTHER
         assert spans[0].status.status_code == StatusCode.ERROR
+        assert spans[0].status.description == "Command failed with exit code 1"
 
-    def test_error_type_is_raw_string(self, tracer_provider, span_exporter):
+    def test_raw_message_preserved_on_status(self, tracer_provider, span_exporter):
         tracer = tracer_provider.get_tracer("test")
         span = tracer.start_span("test")
 
@@ -114,4 +118,5 @@ class TestSetToolErrorAttributes:
 
         spans = span_exporter.get_finished_spans()
         attrs = dict(spans[0].attributes or {})
-        assert attrs[ERROR_TYPE] == "Permission denied: /etc/shadow"
+        assert attrs[ERROR_TYPE] == ERROR_TYPE_OTHER
+        assert spans[0].status.description == "Permission denied: /etc/shadow"

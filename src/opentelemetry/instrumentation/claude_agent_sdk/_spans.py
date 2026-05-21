@@ -8,14 +8,15 @@ from opentelemetry.trace import SpanKind, StatusCode, Tracer
 
 from opentelemetry.instrumentation.claude_agent_sdk._constants import (
     ERROR_TYPE,
+    ERROR_TYPE_OTHER,
     FINISH_REASON_MAP,
     GEN_AI_AGENT_NAME,
     GEN_AI_CONVERSATION_ID,
     GEN_AI_OPERATION_NAME,
+    GEN_AI_PROVIDER_NAME,
     GEN_AI_REQUEST_MODEL,
     GEN_AI_RESPONSE_FINISH_REASONS,
     GEN_AI_RESPONSE_MODEL,
-    GEN_AI_SYSTEM,
     GEN_AI_TOOL_CALL_ID,
     GEN_AI_TOOL_NAME,
     GEN_AI_TOOL_TYPE,
@@ -57,7 +58,7 @@ def create_invoke_agent_span(
 
     attributes: dict[str, str | int | list[str]] = {
         GEN_AI_OPERATION_NAME: OPERATION_INVOKE_AGENT,
-        GEN_AI_SYSTEM: SYSTEM_ANTHROPIC,
+        GEN_AI_PROVIDER_NAME: SYSTEM_ANTHROPIC,
     }
 
     if agent_name:
@@ -164,7 +165,7 @@ def create_execute_tool_span(
 
     attributes: dict[str, str] = {
         GEN_AI_OPERATION_NAME: OPERATION_EXECUTE_TOOL,
-        GEN_AI_SYSTEM: SYSTEM_ANTHROPIC,
+        GEN_AI_PROVIDER_NAME: SYSTEM_ANTHROPIC,
         GEN_AI_TOOL_NAME: tool_name,
         GEN_AI_TOOL_CALL_ID: tool_use_id,
         GEN_AI_TOOL_TYPE: tool_type,
@@ -181,12 +182,13 @@ def create_execute_tool_span(
 def set_tool_error_attributes(span: Span, error_message: str) -> None:
     """Set error.type and ERROR status on a tool span.
 
-    Unlike set_error_attributes (which takes an exception), this takes a raw error
-    string from the SDK hook, since tool errors are strings, not exceptions.
-
     Args:
         span: The tool span to annotate.
         error_message: Raw error string from PostToolUseFailure.
     """
-    span.set_attribute(ERROR_TYPE, error_message)
+    # `error.type` is a low-cardinality classifier per OTel semconv. The SDK
+    # delivers tool failures as free-form strings, not exception classes, so
+    # there is no class name to record — use the spec's catch-all and keep
+    # the raw text on the span status description.
+    span.set_attribute(ERROR_TYPE, ERROR_TYPE_OTHER)
     span.set_status(StatusCode.ERROR, error_message)

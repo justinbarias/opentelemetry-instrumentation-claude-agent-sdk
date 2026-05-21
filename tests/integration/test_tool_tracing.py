@@ -11,8 +11,10 @@ import pytest
 from opentelemetry.trace import SpanKind, StatusCode
 
 from opentelemetry.instrumentation.claude_agent_sdk._constants import (
+    ERROR_TYPE,
+    ERROR_TYPE_OTHER,
     GEN_AI_OPERATION_NAME,
-    GEN_AI_SYSTEM,
+    GEN_AI_PROVIDER_NAME,
     GEN_AI_TOOL_CALL_ARGUMENTS,
     GEN_AI_TOOL_CALL_ID,
     GEN_AI_TOOL_CALL_RESULT,
@@ -115,7 +117,7 @@ class TestToolTracingEndToEnd:
 
         attrs = dict(tool_spans[0].attributes or {})
         assert attrs[GEN_AI_OPERATION_NAME] == OPERATION_EXECUTE_TOOL
-        assert attrs[GEN_AI_SYSTEM] == SYSTEM_ANTHROPIC
+        assert attrs[GEN_AI_PROVIDER_NAME] == SYSTEM_ANTHROPIC
         assert GEN_AI_TOOL_NAME in attrs
         assert GEN_AI_TOOL_CALL_ID in attrs
         assert GEN_AI_TOOL_TYPE in attrs
@@ -215,3 +217,47 @@ class TestToolContentCapture:
         attrs = dict(tool_spans[0].attributes or {})
         assert GEN_AI_TOOL_CALL_ARGUMENTS not in attrs, "Arguments should NOT be captured by default"
         assert GEN_AI_TOOL_CALL_RESULT not in attrs, "Result should NOT be captured by default"
+
+
+class TestToolErrorTypeCardinality:
+    """§21.4 — `error.type` on tool failure must be the OTel catch-all
+    `_OTHER`, NOT the raw error message. The raw message is preserved on
+    the span status description so it remains queryable without polluting
+    metric-cardinality.
+
+    Triggered by asking the model to run a Bash command that exits non-zero.
+    The SDK reports tool failure via PostToolUseFailure, which calls our
+    `set_tool_error_attributes` path.
+    """
+
+    FAILING_PROMPT = (
+        "Run the Bash command `exit 7` and report what you observe. " "Do not try to recover or run other commands."
+    )
+
+    async def test_tool_error_type_is_other(self, instrumentor, span_exporter):
+        import claude_agent_sdk
+
+        async for _ in claude_agent_sdk.query(
+            prompt=_streaming_prompt(self.FAILING_PROMPT),
+            options=make_cheap_options(
+                allowed_tools=["Bash"],
+                permission_mode="bypassPermissions",
+                max_turns=2,
+            ),
+        ):
+            pass
+
+        tool_spans = get_execute_tool_spans(span_exporter)
+        error_spans = [s for s in tool_spans if s.status.status_code == StatusCode.ERROR]
+        # The test is only meaningful when an error span was produced — the
+        # model occasionally succeeds at exit-7 commands depending on how it
+        # frames the request. Skip the cardinality assertion if no failure.
+        if not error_spans:
+            pytest.skip("model did not trigger a tool failure on this run")
+
+        attrs = dict(error_spans[0].attributes or {})
+        assert attrs.get(ERROR_TYPE) == ERROR_TYPE_OTHER, (
+            "error.type must be the low-cardinality _OTHER classifier, " "not the raw error message"
+        )
+        # Raw message stays on the status description.
+        assert error_spans[0].status.description, "raw error message must be preserved on status"
