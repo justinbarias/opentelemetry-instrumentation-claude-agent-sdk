@@ -3,13 +3,13 @@
 ## Installation
 
 ```bash
-pip install opentelemetry-instrumentation-claude-agent-sdk
+pip install otel-instrumentation-claude-agent-sdk
 ```
 
 For development (with OTel SDK for local export):
 
 ```bash
-pip install opentelemetry-instrumentation-claude-agent-sdk opentelemetry-sdk opentelemetry-exporter-otlp
+pip install otel-instrumentation-claude-agent-sdk opentelemetry-sdk opentelemetry-exporter-otlp
 ```
 
 ## Basic Usage (Auto-Instrumentation)
