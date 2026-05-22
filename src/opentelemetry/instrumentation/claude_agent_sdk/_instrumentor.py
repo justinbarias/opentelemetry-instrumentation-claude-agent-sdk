@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -30,6 +31,7 @@ from opentelemetry.instrumentation.claude_agent_sdk._constants import (
 )
 from opentelemetry.instrumentation.claude_agent_sdk._context import (
     InvocationContext,
+    get_invocation_context,
     set_invocation_context,
 )
 from opentelemetry.instrumentation.claude_agent_sdk._events import (
@@ -166,6 +168,23 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
             self._wrap_query,
         )
 
+        # Safety-net wrap on the deeper InternalClient.process_query — the
+        # top-level query() above is just a thin async-generator delegate to
+        # InternalClient().process_query(...). Callers that ran
+        # ``from claude_agent_sdk import query`` BEFORE instrument() have a
+        # frozen reference to the unwrapped top-level query; that binding
+        # bypasses the wrap above but still routes through process_query at
+        # call time, so wrapping there closes the gap. See issue #26.
+        # Re-entrancy is handled by _instrumented_query checking the
+        # InvocationContext ContextVar.
+        # Older SDK layouts or in-test mock SDKs may not expose this — non-fatal.
+        with contextlib.suppress(ImportError, AttributeError):
+            wrapt.wrap_function_wrapper(
+                "claude_agent_sdk._internal.client",
+                "InternalClient.process_query",
+                self._wrap_process_query,
+            )
+
         # Wrap ClaudeSDKClient.__init__()
         wrapt.wrap_function_wrapper(
             "claude_agent_sdk",
@@ -197,6 +216,11 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
             (claude_agent_sdk.ClaudeSDKClient, "receive_response"),
         ]
 
+        with contextlib.suppress(ImportError, AttributeError):
+            from claude_agent_sdk._internal.client import InternalClient
+
+            unwrap_targets.append((InternalClient, "process_query"))
+
         for target, attr in unwrap_targets:
             try:
                 func = getattr(target, attr, None)
@@ -224,13 +248,34 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
         """Wrap standalone query() async generator."""
         return self._instrumented_query(wrapped, args, kwargs)
 
+    def _wrap_process_query(
+        self,
+        wrapped: Any,
+        instance: Any,
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+    ) -> Any:
+        """Wrap InternalClient.process_query — safety net for frozen-import callers (issue #26)."""
+        return self._instrumented_query(wrapped, args, kwargs)
+
     async def _instrumented_query(
         self,
         wrapped: Any,
         args: tuple[Any, ...],
         kwargs: dict[str, Any],
     ) -> Any:
-        """Async generator wrapper for standalone query()."""
+        """Async generator wrapper for standalone query() and InternalClient.process_query().
+
+        When both wraps are active, the outer query() wrap sets the
+        InvocationContext before calling into process_query — the inner
+        wrap detects the live context and passes through to avoid
+        double-instrumenting.
+        """
+        if get_invocation_context() is not None:
+            async for message in wrapped(*args, **kwargs):
+                yield message
+            return
+
         # Extract model from options if available (query() uses keyword-only args)
         options = kwargs.get("options")
         request_model = getattr(options, "model", None) if options else None

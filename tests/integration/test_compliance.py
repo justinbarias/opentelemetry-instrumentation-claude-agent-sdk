@@ -91,33 +91,47 @@ class TestCacheTokenAttributeNames:
 
 
 class TestFinishReasonMaxTurns:
-    """§15 — `max_turns` is an SDK turn-count cap, not a model stop reason.
-    It must surface as `max_turns` so backends can tell it apart from the
-    model-side `max_tokens` (which means the model hit its token limit).
+    """§15 — historically the SDK delivered ``ResultMessage(subtype="max_turns")``
+    when the orchestration-level turn cap was hit, and we mapped it through
+    ``FINISH_REASON_MAP`` to ensure it never got confused with the model-side
+    ``max_tokens`` stop reason.
 
-    We force max_turns=1 with a prompt that requires tool use, so the SDK
-    can't satisfy the request in one turn and emits `subtype=max_turns`.
+    From claude-agent-sdk 0.2.x onward the SDK raises an exception instead of
+    surfacing a max_turns result. Our instrumentation catches that on the
+    error path: ``span.record_exception`` fires, ``error.type`` is set, and
+    the span carries ERROR status. This test now verifies that exception
+    path. The ``FINISH_REASON_MAP['max_turns']`` entry stays in place as
+    defensive code in case a future SDK version reverts.
     """
 
-    async def test_max_turns_passes_through(self, instrumentor, span_exporter):
+    async def test_max_turns_surfaces_on_error_path(self, instrumentor, span_exporter):
         import claude_agent_sdk
+        from opentelemetry.trace import StatusCode
+
+        from opentelemetry.instrumentation.claude_agent_sdk._constants import ERROR_TYPE
 
         options = make_cheap_options(
             max_turns=1,
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
         )
-        async for _ in claude_agent_sdk.query(
-            prompt="Run `ls /` and then run `ls /tmp`. Tell me the file counts.",
-            options=options,
-        ):
-            pass
+        with pytest.raises(Exception, match=r"(?i)max.*turns|maximum number of turns"):
+            async for _ in claude_agent_sdk.query(
+                prompt="Run `ls /` and then run `ls /tmp`. Tell me the file counts.",
+                options=options,
+            ):
+                pass
 
         spans = get_invoke_agent_spans(span_exporter)
-        attrs = dict(spans[0].attributes or {})
-        reasons = attrs.get(GEN_AI_RESPONSE_FINISH_REASONS)
-        # When max_turns is hit, the reason is "max_turns". When the model
-        # happens to finish in a single turn anyway, it's "end_turn". The
-        # *forbidden* outcome is the old buggy mapping to "max_tokens".
-        if reasons is not None:
-            assert "max_tokens" not in reasons, "max_turns must not be mapped to max_tokens"
+        assert len(spans) == 1
+        span = spans[0]
+        assert span.status.status_code == StatusCode.ERROR
+        attrs = dict(span.attributes or {})
+        # error.type must be the exception class qualname (low-cardinality).
+        assert ERROR_TYPE in attrs
+        # The forbidden outcome remains: never let `max_turns` become `max_tokens`.
+        finish_reasons = attrs.get(GEN_AI_RESPONSE_FINISH_REASONS)
+        if finish_reasons is not None:
+            assert "max_tokens" not in finish_reasons
+        # The standard OTel exception event must be recorded on the span.
+        assert any(e.name == "exception" for e in span.events)
