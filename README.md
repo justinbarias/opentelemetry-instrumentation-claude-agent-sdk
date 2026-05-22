@@ -39,7 +39,7 @@ pip install "otel-instrumentation-claude-agent-sdk[instruments]"
 - Python >= 3.10
 - opentelemetry-api >= 1.12
 - opentelemetry-instrumentation >= 0.50b0
-- claude-agent-sdk >= 0.1.44 (hooks support in `query()` requires >= 0.1.44)
+- claude-agent-sdk >= 0.2.0 (hooks support in `query()`; 0.2.x raises on `max_turns` rather than returning a result, which the instrumentation handles via the standard exception path)
 
 ## Quick Start
 
