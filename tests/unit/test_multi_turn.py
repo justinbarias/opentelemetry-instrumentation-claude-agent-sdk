@@ -38,6 +38,10 @@ def _create_mock_sdk() -> ModuleType:
         model: str = "claude-sonnet-4-20250514"
 
     @dataclass
+    class UserMessage:
+        content: Any = None
+
+    @dataclass
     class ResultMessage:
         usage: dict[str, int] | None = field(default_factory=make_usage)
         session_id: str = "multi-turn-session"
@@ -72,6 +76,7 @@ def _create_mock_sdk() -> ModuleType:
     mock_module.ClaudeSDKClient = ClaudeSDKClient  # type: ignore[attr-defined]
     mock_module.ClaudeAgentOptions = ClaudeAgentOptions  # type: ignore[attr-defined]
     mock_module.AssistantMessage = AssistantMessage  # type: ignore[attr-defined]
+    mock_module.UserMessage = UserMessage  # type: ignore[attr-defined]
     mock_module.ResultMessage = ResultMessage  # type: ignore[attr-defined]
 
     return mock_module

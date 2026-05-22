@@ -78,6 +78,10 @@ def _create_mock_sdk_that_raises() -> ModuleType:
         model: str = "claude-sonnet-4-20250514"
 
     @dataclass
+    class UserMessage:
+        content: Any = None
+
+    @dataclass
     class ResultMessage:
         subtype: str = "success"
         session_id: str = "sess-1"
@@ -104,6 +108,7 @@ def _create_mock_sdk_that_raises() -> ModuleType:
             yield  # pragma: no cover — make this an async generator
 
     mock_module.AssistantMessage = AssistantMessage
+    mock_module.UserMessage = UserMessage
     mock_module.ResultMessage = ResultMessage
     mock_module.ClaudeAgentOptions = ClaudeAgentOptions
     mock_module.ClaudeSDKClient = ClaudeSDKClient

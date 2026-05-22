@@ -12,10 +12,18 @@ from opentelemetry.metrics import get_meter_provider
 from opentelemetry.trace import get_tracer_provider
 
 from opentelemetry.instrumentation.claude_agent_sdk._constants import (
+    ERROR_TYPE,
+    FINISH_REASON_MAP,
     GEN_AI_CONVERSATION_ID,
     GEN_AI_OPERATION_NAME,
     GEN_AI_PROVIDER_NAME,
     GEN_AI_REQUEST_MODEL,
+    GEN_AI_RESPONSE_FINISH_REASONS,
+    GEN_AI_RESPONSE_MODEL,
+    GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS,
+    GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS,
+    GEN_AI_USAGE_INPUT_TOKENS,
+    GEN_AI_USAGE_OUTPUT_TOKENS,
     OPERATION_INVOKE_AGENT,
     SCHEMA_URL,
     SYSTEM_ANTHROPIC,
@@ -25,7 +33,14 @@ from opentelemetry.instrumentation.claude_agent_sdk._context import (
     set_invocation_context,
 )
 from opentelemetry.instrumentation.claude_agent_sdk._events import (
+    assistant_message_to_structured,
+    capture_content_enabled,
+    emit_inference_operation_details_event,
     emit_operation_exception_event,
+    options_to_tool_definitions,
+    prompt_to_input_message,
+    system_prompt_to_instructions,
+    user_message_to_structured,
 )
 from opentelemetry.instrumentation.claude_agent_sdk._hooks import (
     build_instrumentation_hooks,
@@ -49,6 +64,51 @@ if TYPE_CHECKING:
     from collections.abc import Collection
 
 _INSTRUMENTATION_NAME = "opentelemetry.instrumentation.claude_agent_sdk"
+
+
+def _inference_details_base_attrs(
+    ctx: InvocationContext,
+    *,
+    result_message: Any = None,
+    error: BaseException | None = None,
+) -> dict[str, Any]:
+    """Assemble the non-content base attributes for the inference details event.
+
+    Mirrors the same set we put on the invoke_agent span so the event and span
+    line up for join-by-attribute use cases. ``result_message`` is the SDK's
+    terminal ``ResultMessage`` when available — used to pull usage tokens and
+    finish reason.
+    """
+    attrs: dict[str, Any] = {
+        GEN_AI_OPERATION_NAME: OPERATION_INVOKE_AGENT,
+        GEN_AI_PROVIDER_NAME: SYSTEM_ANTHROPIC,
+    }
+    if ctx.model:
+        attrs[GEN_AI_REQUEST_MODEL] = ctx.model
+        attrs[GEN_AI_RESPONSE_MODEL] = ctx.model
+    if ctx.session_id:
+        attrs[GEN_AI_CONVERSATION_ID] = ctx.session_id
+    if error is not None:
+        attrs[ERROR_TYPE] = type(error).__qualname__
+
+    if result_message is not None:
+        subtype = getattr(result_message, "subtype", None)
+        if subtype is not None:
+            attrs[GEN_AI_RESPONSE_FINISH_REASONS] = [FINISH_REASON_MAP.get(subtype, subtype)]
+        usage = getattr(result_message, "usage", None)
+        if usage is not None:
+            input_tokens = usage.get("input_tokens", 0) or 0
+            cache_creation = usage.get("cache_creation_input_tokens", 0) or 0
+            cache_read = usage.get("cache_read_input_tokens", 0) or 0
+            output_tokens = usage.get("output_tokens", 0) or 0
+            attrs[GEN_AI_USAGE_INPUT_TOKENS] = input_tokens + cache_creation + cache_read
+            attrs[GEN_AI_USAGE_OUTPUT_TOKENS] = output_tokens
+            if cache_creation > 0:
+                attrs[GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS] = cache_creation
+            if cache_read > 0:
+                attrs[GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS] = cache_read
+
+    return attrs
 
 
 def _exception_event_span_attrs(ctx: InvocationContext) -> dict[str, Any]:
@@ -195,22 +255,36 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
             invocation_span=span,
             capture_content=self._capture_content,
         )
+        # Seed inference-details payloads from the caller's inputs.
+        ctx.system_instructions = system_prompt_to_instructions(getattr(options, "system_prompt", None))
+        ctx.tool_definitions = options_to_tool_definitions(options)
+        initial = prompt_to_input_message(kwargs.get("prompt") or (args[0] if args else None))
+        if initial is not None:
+            ctx.input_messages.append(initial)
+
         set_invocation_context(ctx)
 
         error_occurred: BaseException | None = None
+        last_result_message: Any = None
         try:
-            from claude_agent_sdk import AssistantMessage, ResultMessage
+            from claude_agent_sdk import AssistantMessage, ResultMessage, UserMessage
 
             async for message in wrapped(*args, **kwargs):
-                # Intercept AssistantMessage for model name
+                # Intercept AssistantMessage for model name + output content
                 if isinstance(message, AssistantMessage):
                     model = getattr(message, "model", None)
                     if model:
                         ctx.set_model(model)
                         set_response_model(span, model)
+                    ctx.output_messages.append(assistant_message_to_structured(message))
+
+                # Capture interleaved UserMessages (typically tool results).
+                elif isinstance(message, UserMessage):
+                    ctx.input_messages.append(user_message_to_structured(message))
 
                 # Intercept ResultMessage for finalization
                 if isinstance(message, ResultMessage):
+                    last_result_message = message
                     set_result_attributes(span, message)
                     session_id = getattr(message, "session_id", None)
                     if session_id:
@@ -266,6 +340,18 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
                 duration_seconds=duration,
                 attributes=metric_attrs,
                 error_type=error_type,
+            )
+
+            emit_inference_operation_details_event(
+                self._logger,
+                base_attributes=_inference_details_base_attrs(
+                    ctx, result_message=last_result_message, error=error_occurred
+                ),
+                input_messages=ctx.input_messages,
+                output_messages=ctx.output_messages,
+                system_instructions=ctx.system_instructions,
+                tool_definitions=ctx.tool_definitions,
+                include_content=capture_content_enabled(self._capture_content),
             )
 
             ctx.cleanup_unclosed_spans()
@@ -330,6 +416,12 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
             invocation_span=span,
             capture_content=capture_content,
         )
+        ctx.system_instructions = system_prompt_to_instructions(getattr(options, "system_prompt", None))
+        ctx.tool_definitions = options_to_tool_definitions(options)
+        initial = prompt_to_input_message(kwargs.get("prompt") or (args[0] if args else None))
+        if initial is not None:
+            ctx.input_messages.append(initial)
+
         set_invocation_context(ctx)
 
         # Store context on instance for receive_response() to use
@@ -367,8 +459,9 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
         duration_histogram = getattr(instance, "_otel_duration_histogram", self._duration_histogram)
 
         error_occurred: BaseException | None = None
+        last_result_message: Any = None
         try:
-            from claude_agent_sdk import AssistantMessage, ResultMessage
+            from claude_agent_sdk import AssistantMessage, ResultMessage, UserMessage
 
             async for message in wrapped(*args, **kwargs):
                 # Intercept AssistantMessage
@@ -377,9 +470,15 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
                     if model:
                         ctx.set_model(model)
                         set_response_model(span, model)
+                    ctx.output_messages.append(assistant_message_to_structured(message))
+
+                # Capture interleaved UserMessages (typically tool results).
+                elif isinstance(message, UserMessage):
+                    ctx.input_messages.append(user_message_to_structured(message))
 
                 # Intercept ResultMessage
                 if isinstance(message, ResultMessage):
+                    last_result_message = message
                     set_result_attributes(span, message)
                     session_id = getattr(message, "session_id", None)
                     if session_id:
@@ -433,6 +532,18 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
                 duration_seconds=duration,
                 attributes=metric_attrs,
                 error_type=error_type,
+            )
+
+            emit_inference_operation_details_event(
+                getattr(instance, "_otel_logger", self._logger),
+                base_attributes=_inference_details_base_attrs(
+                    ctx, result_message=last_result_message, error=error_occurred
+                ),
+                input_messages=ctx.input_messages,
+                output_messages=ctx.output_messages,
+                system_instructions=ctx.system_instructions,
+                tool_definitions=ctx.tool_definitions,
+                include_content=capture_content_enabled(ctx.capture_content),
             )
 
             ctx.cleanup_unclosed_spans()

@@ -32,6 +32,22 @@ EXCEPTION_STACKTRACE = "exception.stacktrace"
 
 # --- GenAI Events ---
 EVENT_GEN_AI_CLIENT_OPERATION_EXCEPTION = "gen_ai.client.operation.exception"
+EVENT_GEN_AI_CLIENT_INFERENCE_OPERATION_DETAILS = "gen_ai.client.inference.operation.details"
+
+# --- Inference details event attribute keys ---
+# Opt-in content-bearing attributes per
+# https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-events/
+# Gated on OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT.
+GEN_AI_INPUT_MESSAGES = "gen_ai.input.messages"
+GEN_AI_OUTPUT_MESSAGES = "gen_ai.output.messages"
+GEN_AI_SYSTEM_INSTRUCTIONS = "gen_ai.system_instructions"
+GEN_AI_TOOL_DEFINITIONS = "gen_ai.tool.definitions"
+
+# Other inference-details attributes referenced in the spec.
+GEN_AI_OUTPUT_TYPE = "gen_ai.output.type"
+
+# Env var that opts in to capturing prompt/completion content on events.
+ENV_CAPTURE_MESSAGE_CONTENT = "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"
 
 # --- GenAI Operation Names ---
 OPERATION_INVOKE_AGENT = "invoke_agent"
