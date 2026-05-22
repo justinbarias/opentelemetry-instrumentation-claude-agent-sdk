@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from opentelemetry.sdk._logs import LoggerProvider
 from opentelemetry.sdk._logs.export import InMemoryLogRecordExporter, SimpleLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider as SDKMeterProvider
-from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+from opentelemetry.sdk.metrics.export import InMemoryMetricReader, PeriodicExportingMetricReader
 from opentelemetry.sdk.trace import TracerProvider as SDKTracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
@@ -25,6 +25,43 @@ load_dotenv(_ENV_PATH)
 # Unset CLAUDECODE env var to prevent nested-session detection when running
 # integration tests from within a Claude Code session.
 os.environ.pop("CLAUDECODE", None)
+
+
+# --- Optional OTLP forwarding ---
+#
+# When ``OTEL_INTEGRATION_OTLP_ENDPOINT`` is set, every provider in this
+# conftest mirrors its telemetry to an OTLP/gRPC collector in addition to
+# the in-memory exporters used for assertions. This lets the same
+# integration suite verify behaviour locally and stream signals to a real
+# collector (e.g. ``localhost:4317``) in the same run.
+_OTLP_ENDPOINT = os.environ.get("OTEL_INTEGRATION_OTLP_ENDPOINT")
+
+
+def _otlp_span_processor() -> Any:
+    if not _OTLP_ENDPOINT:
+        return None
+    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+    return BatchSpanProcessor(OTLPSpanExporter(endpoint=_OTLP_ENDPOINT, insecure=True))
+
+
+def _otlp_metric_reader() -> Any:
+    if not _OTLP_ENDPOINT:
+        return None
+    from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+
+    return PeriodicExportingMetricReader(OTLPMetricExporter(endpoint=_OTLP_ENDPOINT, insecure=True))
+
+
+def _otlp_log_processor() -> Any:
+    if not _OTLP_ENDPOINT:
+        return None
+    from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
+    from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+
+    return BatchLogRecordProcessor(OTLPLogExporter(endpoint=_OTLP_ENDPOINT, insecure=True))
+
 
 # --- Auth skip marker ---
 requires_auth = pytest.mark.skipif(
@@ -45,7 +82,13 @@ def span_exporter() -> InMemorySpanExporter:
 def tracer_provider(span_exporter: InMemorySpanExporter) -> SDKTracerProvider:
     provider = SDKTracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(span_exporter))
-    return provider
+    otlp = _otlp_span_processor()
+    if otlp is not None:
+        provider.add_span_processor(otlp)
+    yield provider
+    # Flush OTLP before tearing the provider down so spans actually leave the
+    # process before the next test resets fixtures.
+    provider.shutdown()
 
 
 @pytest.fixture()
@@ -55,7 +98,13 @@ def metric_reader() -> InMemoryMetricReader:
 
 @pytest.fixture()
 def meter_provider(metric_reader: InMemoryMetricReader) -> SDKMeterProvider:
-    return SDKMeterProvider(metric_readers=[metric_reader])
+    readers: list[Any] = [metric_reader]
+    otlp = _otlp_metric_reader()
+    if otlp is not None:
+        readers.append(otlp)
+    provider = SDKMeterProvider(metric_readers=readers)
+    yield provider
+    provider.shutdown()
 
 
 @pytest.fixture()
@@ -67,7 +116,11 @@ def log_record_exporter() -> InMemoryLogRecordExporter:
 def logger_provider(log_record_exporter: InMemoryLogRecordExporter) -> LoggerProvider:
     provider = LoggerProvider()
     provider.add_log_record_processor(SimpleLogRecordProcessor(log_record_exporter))
-    return provider
+    otlp = _otlp_log_processor()
+    if otlp is not None:
+        provider.add_log_record_processor(otlp)
+    yield provider
+    provider.shutdown()
 
 
 @pytest.fixture()

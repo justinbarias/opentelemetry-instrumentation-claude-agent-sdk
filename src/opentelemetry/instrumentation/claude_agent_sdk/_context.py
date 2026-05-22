@@ -24,6 +24,13 @@ class InvocationContext:
     model: str | None = None
     session_id: str | None = None
     capture_content: bool = False
+    # Accumulated structured payloads for the gen_ai.client.inference.operation.details
+    # event. These are appended to as messages stream through the wrapper and
+    # consumed once when the agent invocation finishes.
+    input_messages: list[dict[str, Any]] = field(default_factory=list)
+    output_messages: list[dict[str, Any]] = field(default_factory=list)
+    system_instructions: list[dict[str, Any]] | None = None
+    tool_definitions: list[dict[str, Any]] | None = None
     _model_set: bool = field(default=False, repr=False)
     parent_otel_context: Any = field(default=None, repr=False)
 

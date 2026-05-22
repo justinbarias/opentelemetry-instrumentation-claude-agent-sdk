@@ -176,12 +176,31 @@ Both metrics include `gen_ai.operation.name`, `gen_ai.provider.name`, and `gen_a
 
 ### Events (log records)
 
-On the agent error path, two records are produced in addition to the span attributes:
+The instrumentation emits two GenAI events as log records when a `LoggerProvider` is configured via `instrument(logger_provider=...)` (or set globally):
 
-- The standard OTel **`exception` span event** via `span.record_exception(exc)` — carries `exception.type`, `exception.message`, `exception.stacktrace`.
-- A separate **`gen_ai.client.operation.exception`** log record (severity `WARN`) per the GenAI exceptions semconv. Emitted only when a `LoggerProvider` is configured via `instrument(logger_provider=...)` or globally.
+#### `gen_ai.client.inference.operation.details`
 
-Both carry `exception.type` / `exception.message` / `exception.stacktrace`. The GenAI event also copies the operation's identifying span attributes (`gen_ai.operation.name`, `gen_ai.provider.name`, `gen_ai.request.model`, `gen_ai.conversation.id`) so backends can correlate the event without a span join.
+Severity `INFO`. Emitted once per `invoke_agent` invocation with the operation's request/response metadata. Carries (when available):
+
+- `gen_ai.operation.name`, `gen_ai.provider.name`
+- `gen_ai.request.model`, `gen_ai.response.model`
+- `gen_ai.response.finish_reasons`
+- `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, plus cache variants
+- `gen_ai.conversation.id`
+- `error.type` on failure
+
+The content-bearing payloads are **opt-in** per the GenAI events spec — they are attached only when `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true` is set, or when the instrumentor is configured with `capture_content=True`:
+
+- `gen_ai.input.messages` — user prompts and tool results, as structured `parts` arrays
+- `gen_ai.output.messages` — assistant turns (text + tool calls), as structured `parts` arrays
+- `gen_ai.system_instructions` — system prompt text
+- `gen_ai.tool.definitions` — tool surface configured on the agent (names only — the SDK doesn't expose schemas)
+
+When content capture is opted in, the same four payloads are *also* mirrored onto the `invoke_agent` span as JSON-string attributes. Dashboards that don't yet consume the events form (e.g. the [.NET Aspire dashboard](https://aspire.dev/dashboard/explore/#genai-telemetry-visualization), Microsoft.Extensions.AI consumers) read them off the span instead.
+
+#### `gen_ai.client.operation.exception`
+
+Severity `WARN`. Emitted on the agent error path alongside the standard OTel `exception` span event (via `span.record_exception(exc)`). Carries `exception.type` / `exception.message` / `exception.stacktrace` plus a copy of the operation's identifying span attributes (`gen_ai.operation.name`, `gen_ai.provider.name`, `gen_ai.request.model`, `gen_ai.conversation.id`) so backends can correlate without a span join.
 
 ## Configuration Options
 
@@ -189,9 +208,42 @@ Both carry `exception.type` / `exception.message` / `exception.stacktrace`. The 
 |-----------|------|---------|-------------|
 | `tracer_provider` | `TracerProvider` | Global | Custom tracer provider |
 | `meter_provider` | `MeterProvider` | Global | Custom meter provider |
-| `logger_provider` | `LoggerProvider` | Global | Custom logger provider — used to emit `gen_ai.client.operation.exception` events |
+| `logger_provider` | `LoggerProvider` | Global | Custom logger provider — used to emit `gen_ai.client.operation.exception` and `gen_ai.client.inference.operation.details` events |
 | `agent_name` | `str` | `None` | Agent name for span names and attributes |
-| `capture_content` | `bool` | `False` | Capture tool arguments and results as span attributes |
+| `capture_content` | `bool` | `False` | Opt in to recording prompt/completion content and tool arguments/results. See [Capturing message content](#capturing-message-content). |
+
+### Environment variables
+
+| Variable | Effect |
+|----------|--------|
+| `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` | When set to `true` / `1` / `yes`, opts in to recording GenAI message content on spans and events. Read at emit time, so it can be toggled without re-instrumenting. |
+
+### Capturing message content
+
+Prompt/completion content is **opt-in** per the [GenAI semconv](https://opentelemetry.io/docs/specs/semconv/gen-ai/) because it often contains sensitive data. Enable it via either signal:
+
+**Environment variable** (recommended for ops-controlled deployments):
+
+```bash
+export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true
+```
+
+**Instrumentor config** (recommended for in-code control):
+
+```python
+instrumentor.instrument(
+    tracer_provider=tracer_provider,
+    logger_provider=logger_provider,   # required for the events form
+    capture_content=True,
+)
+```
+
+Either signal turns on all four GenAI content payloads — `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.system_instructions`, `gen_ai.tool.definitions` — and the instrumentation emits them in **both** places:
+
+- As JSON-string attributes on the `invoke_agent` span (read by the [.NET Aspire dashboard](https://aspire.dev/dashboard/explore/#genai-telemetry-visualization), Microsoft.Extensions.AI consumers, and older OTel-aware backends).
+- As structured attributes on the `gen_ai.client.inference.operation.details` log record (read by newer events-aware consumers per the GenAI events spec).
+
+A note on the `capture_content` parameter specifically: it also turns on `gen_ai.tool.call.arguments` / `gen_ai.tool.call.result` on `execute_tool` spans. The env var only governs the GenAI message payloads — it does not enable tool argument/result capture. If you want both, set `capture_content=True`.
 
 ## Development
 
