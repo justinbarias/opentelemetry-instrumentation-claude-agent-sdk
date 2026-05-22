@@ -245,6 +245,18 @@ Either signal turns on all four GenAI content payloads — `gen_ai.input.message
 
 A note on the `capture_content` parameter specifically: it also turns on `gen_ai.tool.call.arguments` / `gen_ai.tool.call.result` on `execute_tool` spans. The env var only governs the GenAI message payloads — it does not enable tool argument/result capture. If you want both, set `capture_content=True`.
 
+## Caveats
+
+### `from claude_agent_sdk import query` and instrumentor ordering
+
+Python's `from X import Y` captures the value of `X.Y` at the moment the import runs. If your code does
+
+```python
+from claude_agent_sdk import query
+```
+
+at module load time and `ClaudeAgentSdkInstrumentor().instrument()` runs later, the local `query` binding stays frozen on the original unwrapped function. As of `0.0.6` this no longer matters in practice: the instrumentor also wraps the deeper `InternalClient.process_query` that the top-level `query()` always delegates to at call time, so frozen references still produce spans. If you are pinning an older version (`<= 0.0.5`) and seeing missing spans for top-level `query()` calls, use `import claude_agent_sdk` + `claude_agent_sdk.query(...)` so the attribute is resolved fresh on every call, or upgrade.
+
 ## Development
 
 ### Prerequisites
