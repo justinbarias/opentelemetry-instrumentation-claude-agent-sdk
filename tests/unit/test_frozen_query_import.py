@@ -203,8 +203,6 @@ class TestFrozenQueryImport:
                 pass
 
             invoke_spans = [s for s in span_exporter.get_finished_spans() if s.name.startswith("invoke_agent")]
-            assert len(invoke_spans) == 1, (
-                "outer query() wrap + inner process_query wrap must coalesce to one span"
-            )
+            assert len(invoke_spans) == 1, "outer query() wrap + inner process_query wrap must coalesce to one span"
         finally:
             instrumentor.uninstrument()
