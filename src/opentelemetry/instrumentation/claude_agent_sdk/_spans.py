@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any
 
 from opentelemetry.trace import SpanKind, StatusCode, Tracer
@@ -12,12 +13,16 @@ from opentelemetry.instrumentation.claude_agent_sdk._constants import (
     FINISH_REASON_MAP,
     GEN_AI_AGENT_NAME,
     GEN_AI_CONVERSATION_ID,
+    GEN_AI_INPUT_MESSAGES,
     GEN_AI_OPERATION_NAME,
+    GEN_AI_OUTPUT_MESSAGES,
     GEN_AI_PROVIDER_NAME,
     GEN_AI_REQUEST_MODEL,
     GEN_AI_RESPONSE_FINISH_REASONS,
     GEN_AI_RESPONSE_MODEL,
+    GEN_AI_SYSTEM_INSTRUCTIONS,
     GEN_AI_TOOL_CALL_ID,
+    GEN_AI_TOOL_DEFINITIONS,
     GEN_AI_TOOL_NAME,
     GEN_AI_TOOL_TYPE,
     GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS,
@@ -112,6 +117,33 @@ def set_result_attributes(span: Span, result_message: Any) -> None:
 def set_response_model(span: Span, model: str) -> None:
     """Set the response model attribute on a span."""
     span.set_attribute(GEN_AI_RESPONSE_MODEL, model)
+
+
+def set_message_content_attributes(
+    span: Span,
+    *,
+    input_messages: list[dict[str, Any]] | None,
+    output_messages: list[dict[str, Any]] | None,
+    system_instructions: list[dict[str, Any]] | None,
+    tool_definitions: list[dict[str, Any]] | None,
+) -> None:
+    """Attach prompt/completion payloads to the GenAI span as JSON strings.
+
+    The events spec carries these as structured attributes on a separate log
+    record. Many consumers (the .NET Aspire dashboard, Microsoft.Extensions.AI,
+    older OTel-aware backends) read the same payloads off the *span* instead,
+    as JSON-string attributes. We emit both so either consumer renders the
+    content — at the cost of a little duplication. Callers must already have
+    gated on the opt-in content-capture flag before invoking this helper.
+    """
+    if input_messages:
+        span.set_attribute(GEN_AI_INPUT_MESSAGES, json.dumps(input_messages, default=str))
+    if output_messages:
+        span.set_attribute(GEN_AI_OUTPUT_MESSAGES, json.dumps(output_messages, default=str))
+    if system_instructions:
+        span.set_attribute(GEN_AI_SYSTEM_INSTRUCTIONS, json.dumps(system_instructions, default=str))
+    if tool_definitions:
+        span.set_attribute(GEN_AI_TOOL_DEFINITIONS, json.dumps(tool_definitions, default=str))
 
 
 def set_error_attributes(span: Span, exception: BaseException) -> None:

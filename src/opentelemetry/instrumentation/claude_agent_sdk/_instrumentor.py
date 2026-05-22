@@ -55,6 +55,7 @@ from opentelemetry.instrumentation.claude_agent_sdk._metrics import (
 from opentelemetry.instrumentation.claude_agent_sdk._spans import (
     create_invoke_agent_span,
     set_error_attributes,
+    set_message_content_attributes,
     set_response_model,
     set_result_attributes,
 )
@@ -342,6 +343,18 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
                 error_type=error_type,
             )
 
+            include_content = capture_content_enabled(self._capture_content)
+            if include_content:
+                # Mirror onto the span so dashboards reading from spans (Aspire,
+                # M.E.AI) can render the prompt/completion content alongside
+                # the event-based emission below.
+                set_message_content_attributes(
+                    span,
+                    input_messages=ctx.input_messages,
+                    output_messages=ctx.output_messages,
+                    system_instructions=ctx.system_instructions,
+                    tool_definitions=ctx.tool_definitions,
+                )
             emit_inference_operation_details_event(
                 self._logger,
                 base_attributes=_inference_details_base_attrs(
@@ -351,7 +364,7 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
                 output_messages=ctx.output_messages,
                 system_instructions=ctx.system_instructions,
                 tool_definitions=ctx.tool_definitions,
-                include_content=capture_content_enabled(self._capture_content),
+                include_content=include_content,
             )
 
             ctx.cleanup_unclosed_spans()
@@ -534,6 +547,15 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
                 error_type=error_type,
             )
 
+            include_content = capture_content_enabled(ctx.capture_content)
+            if include_content:
+                set_message_content_attributes(
+                    span,
+                    input_messages=ctx.input_messages,
+                    output_messages=ctx.output_messages,
+                    system_instructions=ctx.system_instructions,
+                    tool_definitions=ctx.tool_definitions,
+                )
             emit_inference_operation_details_event(
                 getattr(instance, "_otel_logger", self._logger),
                 base_attributes=_inference_details_base_attrs(
@@ -543,7 +565,7 @@ class ClaudeAgentSdkInstrumentor(BaseInstrumentor):  # type: ignore[misc]
                 output_messages=ctx.output_messages,
                 system_instructions=ctx.system_instructions,
                 tool_definitions=ctx.tool_definitions,
-                include_content=capture_content_enabled(ctx.capture_content),
+                include_content=include_content,
             )
 
             ctx.cleanup_unclosed_spans()

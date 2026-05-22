@@ -29,7 +29,7 @@ from opentelemetry.instrumentation.claude_agent_sdk._constants import (
     OPERATION_INVOKE_AGENT,
     SYSTEM_ANTHROPIC,
 )
-from tests.integration.conftest import make_cheap_options, requires_auth
+from tests.integration.conftest import get_invoke_agent_spans, make_cheap_options, requires_auth
 
 pytestmark = [pytest.mark.integration, requires_auth]
 
@@ -148,6 +148,45 @@ class TestContentGatingViaEnvVar:
 
         # System prompt becomes a single-entry instructions list.
         assert attrs[GEN_AI_SYSTEM_INSTRUCTIONS] == [{"type": "text", "content": "Reply with just a number, no words."}]
+
+
+class TestSpanContentMirroring:
+    """The Aspire dashboard (and Microsoft.Extensions.AI consumers) read
+    ``gen_ai.input.messages`` / ``output.messages`` / ``system_instructions``
+    off the GenAI span as JSON-string attributes — they don't yet consume the
+    log-record event form. Verify the span carries the JSON-string payloads
+    when content capture is opted in so those dashboards render content."""
+
+    async def test_span_carries_json_payloads_when_opted_in(self, instrumentor_with_logs, span_exporter, monkeypatch):
+        import json
+
+        monkeypatch.setenv(ENV_CAPTURE_MESSAGE_CONTENT, "true")
+        import claude_agent_sdk
+
+        options = make_cheap_options()
+        options.system_prompt = "Reply with just a number, no words."
+        async for _ in claude_agent_sdk.query(prompt="What is 2+2?", options=options):
+            pass
+
+        spans = get_invoke_agent_spans(span_exporter)
+        assert len(spans) == 1
+        attrs = dict(spans[0].attributes or {})
+
+        # Payloads are JSON strings, not native list/dict, so they fit
+        # the OTel span-attribute type contract.
+        assert GEN_AI_INPUT_MESSAGES in attrs
+        assert isinstance(attrs[GEN_AI_INPUT_MESSAGES], str)
+        input_msgs = json.loads(attrs[GEN_AI_INPUT_MESSAGES])
+        assert input_msgs[0]["role"] == "user"
+        assert any(p.get("type") == "text" and "2+2" in p.get("content", "") for p in input_msgs[0]["parts"])
+
+        assert GEN_AI_OUTPUT_MESSAGES in attrs
+        out_msgs = json.loads(attrs[GEN_AI_OUTPUT_MESSAGES])
+        assert any(p.get("type") == "text" for m in out_msgs for p in m.get("parts", []))
+
+        assert json.loads(attrs[GEN_AI_SYSTEM_INSTRUCTIONS]) == [
+            {"type": "text", "content": "Reply with just a number, no words."}
+        ]
 
 
 class TestStructuredToolPayload:

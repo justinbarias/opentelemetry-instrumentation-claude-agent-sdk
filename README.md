@@ -196,6 +196,8 @@ The content-bearing payloads are **opt-in** per the GenAI events spec — they a
 - `gen_ai.system_instructions` — system prompt text
 - `gen_ai.tool.definitions` — tool surface configured on the agent (names only — the SDK doesn't expose schemas)
 
+When content capture is opted in, the same four payloads are *also* mirrored onto the `invoke_agent` span as JSON-string attributes. Dashboards that don't yet consume the events form (e.g. the [.NET Aspire dashboard](https://aspire.dev/dashboard/explore/#genai-telemetry-visualization), Microsoft.Extensions.AI consumers) read them off the span instead.
+
 #### `gen_ai.client.operation.exception`
 
 Severity `WARN`. Emitted on the agent error path alongside the standard OTel `exception` span event (via `span.record_exception(exc)`). Carries `exception.type` / `exception.message` / `exception.stacktrace` plus a copy of the operation's identifying span attributes (`gen_ai.operation.name`, `gen_ai.provider.name`, `gen_ai.request.model`, `gen_ai.conversation.id`) so backends can correlate without a span join.

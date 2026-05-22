@@ -502,6 +502,61 @@ class TestEndToEndStandaloneQuery:
         assert attrs[GEN_AI_TOOL_DEFINITIONS] == [{"type": "function", "name": "Bash"}]
 
 
+class TestSpanContentMirroring:
+    """When content capture is opted in, the same payloads must appear on the
+    invoke_agent span as JSON strings. This is what Aspire / M.E.AI dashboards
+    read; without it they show 'No messages found' even with the events
+    emitted."""
+
+    async def test_payloads_on_span_when_opted_in(self, mock_sdk, monkeypatch):
+        import json
+
+        monkeypatch.setenv(ENV_CAPTURE_MESSAGE_CONTENT, "true")
+        span_exporter, tracer_provider, _, logger_provider = _setup_otel()
+        inst = ClaudeAgentSdkInstrumentor()
+        inst.instrument(tracer_provider=tracer_provider, logger_provider=logger_provider)
+        try:
+            options = mock_sdk.ClaudeAgentOptions(system_prompt="Be terse.", allowed_tools=["Bash"])
+            async for _ in mock_sdk.query(prompt="hello span", options=options):
+                pass
+        finally:
+            inst.uninstrument()
+
+        spans = span_exporter.get_finished_spans()
+        invoke = next(s for s in spans if s.name.startswith("invoke_agent"))
+        attrs = dict(invoke.attributes or {})
+
+        # JSON strings so backends that only read spans can render content.
+        assert GEN_AI_INPUT_MESSAGES in attrs
+        input_payload = json.loads(attrs[GEN_AI_INPUT_MESSAGES])
+        assert input_payload[0] == {"role": "user", "parts": [{"type": "text", "content": "hello span"}]}
+
+        assert GEN_AI_OUTPUT_MESSAGES in attrs
+        assert json.loads(attrs[GEN_AI_OUTPUT_MESSAGES])  # non-empty
+
+        assert json.loads(attrs[GEN_AI_SYSTEM_INSTRUCTIONS]) == [{"type": "text", "content": "Be terse."}]
+        assert json.loads(attrs[GEN_AI_TOOL_DEFINITIONS]) == [{"type": "function", "name": "Bash"}]
+
+    async def test_no_payloads_on_span_when_opted_out(self, mock_sdk, monkeypatch):
+        monkeypatch.delenv(ENV_CAPTURE_MESSAGE_CONTENT, raising=False)
+        span_exporter, tracer_provider, _, logger_provider = _setup_otel()
+        inst = ClaudeAgentSdkInstrumentor()
+        inst.instrument(tracer_provider=tracer_provider, logger_provider=logger_provider)
+        try:
+            async for _ in mock_sdk.query(prompt="hi"):
+                pass
+        finally:
+            inst.uninstrument()
+
+        spans = span_exporter.get_finished_spans()
+        invoke = next(s for s in spans if s.name.startswith("invoke_agent"))
+        attrs = dict(invoke.attributes or {})
+        assert GEN_AI_INPUT_MESSAGES not in attrs
+        assert GEN_AI_OUTPUT_MESSAGES not in attrs
+        assert GEN_AI_SYSTEM_INSTRUCTIONS not in attrs
+        assert GEN_AI_TOOL_DEFINITIONS not in attrs
+
+
 class TestEndToEndClientReceiveResponse:
     async def test_emits_event_via_client_path(self, mock_sdk, monkeypatch):
         monkeypatch.setenv(ENV_CAPTURE_MESSAGE_CONTENT, "true")
